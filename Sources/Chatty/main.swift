@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let transcriber = OpenAITranscriber()
     private let store = try! RecordingStore()
     private var pendingRecordingID: UUID?
+    private var targetPasteApplication: NSRunningApplication?
     private var lastErrorMessage: String?
     private var transcribingIDs = Set<UUID>()
 
@@ -259,6 +260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 do {
                     let destination = try store.makeRecordingURL()
                     pendingRecordingID = destination.id
+                    targetPasteApplication = NSWorkspace.shared.frontmostApplication
                     try await recorder.start(fileURL: destination.url)
                     escapeShortcut.start()
                     overlay.showRecording()
@@ -280,6 +282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try recorder.cancel()
             escapeShortcut.stop()
             pendingRecordingID = nil
+            targetPasteApplication = nil
             overlay.close()
         } catch {
             showError(error.localizedDescription)
@@ -306,24 +309,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func copyTranscriptAndPaste(_ transcript: String) {
         copyTextToClipboard(transcript)
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+        let targetApplication = targetPasteApplication
+        targetPasteApplication = nil
+        targetApplication?.activate(options: [])
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             self.pasteClipboardContents()
         }
     }
 
     private func pasteClipboardContents() {
-        guard let source = CGEventSource(stateID: .combinedSessionState),
-              let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true),
-              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false)
+        let commandKey: CGKeyCode = 0x37
+        let vKey: CGKeyCode = 0x09
+
+        guard let source = CGEventSource(stateID: .hidSystemState),
+              let commandDown = CGEvent(keyboardEventSource: source, virtualKey: commandKey, keyDown: true),
+              let vDown = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: true),
+              let vUp = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: false),
+              let commandUp = CGEvent(keyboardEventSource: source, virtualKey: commandKey, keyDown: false)
         else {
             showError("Could not create paste keyboard event.")
             return
         }
 
-        keyDown.flags = .maskCommand
-        keyUp.flags = .maskCommand
-        keyDown.post(tap: .cghidEventTap)
-        keyUp.post(tap: .cghidEventTap)
+        vDown.flags = .maskCommand
+        vUp.flags = .maskCommand
+
+        commandDown.post(tap: .cghidEventTap)
+        vDown.post(tap: .cghidEventTap)
+        vUp.post(tap: .cghidEventTap)
+        commandUp.post(tap: .cghidEventTap)
     }
 
     private func transcribe(_ recording: Recording, pasteAfterCopy: Bool = false) {
