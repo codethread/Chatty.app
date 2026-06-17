@@ -12,6 +12,8 @@ final class EscapeShortcut {
     }
 
     func start() {
+        guard hotKey == nil, handler == nil else { return }
+
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let selfPointer = Unmanaged.passUnretained(self).toOpaque()
         let installStatus = InstallEventHandler(
@@ -34,9 +36,20 @@ final class EscapeShortcut {
             &hotKey
         )
         guard registerStatus == noErr else {
-            if let handler { RemoveEventHandler(handler) }
-            handler = nil
+            stop()
             return
+        }
+    }
+
+    func stop() {
+        if let hotKey {
+            UnregisterEventHotKey(hotKey)
+            self.hotKey = nil
+        }
+
+        if let handler {
+            RemoveEventHandler(handler)
+            self.handler = nil
         }
     }
 

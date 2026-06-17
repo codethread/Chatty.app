@@ -33,7 +33,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         shortcut = DoubleShiftShortcut { [weak self] in self?.toggleRecording() }
         shortcut.start()
         escapeShortcut = EscapeShortcut { [weak self] in self?.handleEscape() }
-        escapeShortcut.start()
         runInitialSetup()
     }
 
@@ -248,6 +247,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 do {
                     overlay.showProcessing()
                     let file = try recorder.stop()
+                    escapeShortcut.stop()
                     guard let pendingRecordingID else { throw AudioError.notRecording }
                     self.pendingRecordingID = nil
                     let recording = try store.addRecording(id: pendingRecordingID, audioURL: file)
@@ -261,6 +261,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     let destination = try store.makeRecordingURL()
                     pendingRecordingID = destination.id
                     try await recorder.start(fileURL: destination.url)
+                    escapeShortcut.start()
                     overlay.showRecording()
                 } catch {
                     pendingRecordingID = nil
@@ -271,16 +272,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleEscape() {
-        if recorder.isRecording {
-            cancelRecording()
-        } else {
-            dismissErrorUI()
-        }
+        guard recorder.isRecording else { return }
+        cancelRecording()
     }
 
     private func cancelRecording() {
         do {
             try recorder.cancel()
+            escapeShortcut.stop()
             pendingRecordingID = nil
             overlay.close()
         } catch {
