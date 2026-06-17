@@ -14,15 +14,15 @@ Menu-bar-only macOS dictation helper.
 
 ## Build
 
-```nu
-./scripts/build-app.nu
+```sh
+./scripts/build-app.sh
 ```
 
 Useful flags:
 
-```nu
-./scripts/build-app.nu --no-open
-./scripts/build-app.nu --reset-permissions
+```sh
+./scripts/build-app.sh --no-open
+./scripts/build-app.sh --reset-permissions
 ```
 
 On first launch Chatty front-loads setup:

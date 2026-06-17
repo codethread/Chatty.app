@@ -202,8 +202,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func copyTranscript(_ sender: NSMenuItem) {
         guard let recording = recording(from: sender), let transcript = recording.transcript, !transcript.isEmpty else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(transcript, forType: .string)
+        copyTextToClipboard(transcript)
         overlay.showSuccess()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.overlay.close() }
     }
@@ -252,7 +251,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.pendingRecordingID = nil
                     let recording = try store.addRecording(id: pendingRecordingID, audioURL: file)
                     refreshMenu()
-                    transcribe(recording)
+                    transcribe(recording, pasteAfterCopy: true)
                 } catch {
                     showError(error.localizedDescription)
                 }
@@ -299,7 +298,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         errorWindow.show(message: message)
     }
 
-    private func transcribe(_ recording: Recording) {
+    private func copyTextToClipboard(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    private func copyTranscriptAndPaste(_ transcript: String) {
+        copyTextToClipboard(transcript)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            self.pasteClipboardContents()
+        }
+    }
+
+    private func pasteClipboardContents() {
+        guard let source = CGEventSource(stateID: .combinedSessionState),
+              let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false)
+        else {
+            showError("Could not create paste keyboard event.")
+            return
+        }
+
+        keyDown.flags = .maskCommand
+        keyUp.flags = .maskCommand
+        keyDown.post(tap: .cghidEventTap)
+        keyUp.post(tap: .cghidEventTap)
+    }
+
+    private func transcribe(_ recording: Recording, pasteAfterCopy: Bool = false) {
         guard !transcribingIDs.contains(recording.id) else { return }
         transcribingIDs.insert(recording.id)
         refreshMenu()
@@ -309,8 +336,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 let text = try await transcriber.transcribe(file: recording.audioURL)
                 try store.updateTranscript(for: recording.id, transcript: text)
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(text, forType: .string)
+                if pasteAfterCopy {
+                    copyTranscriptAndPaste(text)
+                } else {
+                    copyTextToClipboard(text)
+                }
                 transcribingIDs.remove(recording.id)
                 refreshMenu()
                 overlay.showSuccess()

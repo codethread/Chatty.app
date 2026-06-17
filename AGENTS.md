@@ -6,8 +6,8 @@ Chatty is a Swift/AppKit macOS menu-bar-only dictation app. It targets recent Ap
 
 ## Build / install
 
-```nu
-./scripts/build-app.nu
+```sh
+./scripts/build-app.sh
 ```
 
 This builds `build/Chatty.app`, quits any running Chatty process, replaces `/Applications/Chatty.app`, and opens it unless `--no-open` is passed. Use `--reset-permissions` to reset Chatty TCC permissions before replacing the installed app.
