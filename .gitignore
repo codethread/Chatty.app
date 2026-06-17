@@ -1,0 +1,24 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Build products
+build/
+DerivedData/
+*.xcarchive
+*.dSYM/
+
+# Xcode user state
+*.xcuserdata/
+*.xcuserstate
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# macOS
+.DS_Store
+
+# Logs and local env
+*.log
+.env
+.env.*
