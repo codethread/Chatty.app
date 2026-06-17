@@ -7,18 +7,14 @@ final class AudioRecorder: NSObject, AVAudioRecorderDelegate {
     private var meterTimer: Timer?
     private var lastMeterEmit: TimeInterval = 0
     var onLevelChange: ((Float) -> Void)?
+    var onFileSizeChange: ((Int64) -> Void)?
 
     var isRecording: Bool { recorder?.isRecording == true }
 
-    func start() async throws {
+    func start(fileURL url: URL) async throws {
         guard !isRecording else { return }
         let granted = await AVCaptureDevice.requestAccess(for: .audio)
         guard granted else { throw AudioError.microphoneDenied }
-
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("chatty-")
-            .appendingPathExtension(UUID().uuidString)
-            .appendingPathExtension("m4a")
 
         let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
@@ -41,12 +37,23 @@ final class AudioRecorder: NSObject, AVAudioRecorderDelegate {
     func stop() throws -> URL {
         guard let recorder, recorder.isRecording else { throw AudioError.notRecording }
         let url = recorder.url
+        finishRecording(recorder)
+        return url
+    }
+
+    func cancel() throws {
+        guard let recorder, recorder.isRecording else { throw AudioError.notRecording }
+        let url = recorder.url
+        finishRecording(recorder)
+        try FileManager.default.removeItem(at: url)
+    }
+
+    private func finishRecording(_ recorder: AVAudioRecorder) {
         recorder.stop()
         meterTimer?.invalidate()
         meterTimer = nil
         self.recorder = nil
         onLevelChange?(0)
-        return url
     }
 
     private func emitMeter() {
@@ -54,6 +61,9 @@ final class AudioRecorder: NSObject, AVAudioRecorderDelegate {
         recorder.updateMeters()
         let power = recorder.averagePower(forChannel: 0)
         let detected: Float = power > Settings.meterSilenceThreshold ? 1 : 0
+        if let size = try? FileManager.default.attributesOfItem(atPath: recorder.url.path)[.size] as? NSNumber {
+            onFileSizeChange?(size.int64Value)
+        }
         let now = ProcessInfo.processInfo.systemUptime
         if detected > 0 || now - lastMeterEmit > Settings.meterDebounce {
             lastMeterEmit = now
