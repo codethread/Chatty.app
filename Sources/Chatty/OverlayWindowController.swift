@@ -6,6 +6,16 @@ final class OverlayWindowController: NSWindowController {
     private var recordingStartedAt: Date?
     private var durationTimer: Timer?
 
+    var onCancel: (() -> Void)? {
+        get { content.onCancel }
+        set { content.onCancel = newValue }
+    }
+
+    var onRetry: (() -> Void)? {
+        get { content.onRetry }
+        set { content.onRetry = newValue }
+    }
+
     init() {
         let window = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 340, height: 92),
@@ -26,6 +36,7 @@ final class OverlayWindowController: NSWindowController {
 
     func showRecording() {
         recordingStartedAt = Date()
+        content.actions = [.cancel]
         content.state = .recording(level: 0, duration: 0, fileSize: 0)
         durationTimer?.invalidate()
         durationTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -46,26 +57,33 @@ final class OverlayWindowController: NSWindowController {
         }
     }
 
-    func showProcessing() {
+    func showProcessing(canCancel: Bool = false, canRetry: Bool = false) {
         stopDurationTimer()
+        var actions: OverlayActions = []
+        if canCancel { actions.insert(.cancel) }
+        if canRetry { actions.insert(.retry) }
+        content.actions = actions
         content.state = .processing
         showCentered()
     }
 
     func showSuccess() {
         stopDurationTimer()
+        content.actions = []
         content.state = .success
         showCentered()
     }
 
-    func showError(_ message: String) {
+    func showError(_ message: String, canRetry: Bool = false) {
         stopDurationTimer()
+        content.actions = canRetry ? [.cancel, .retry] : [.cancel]
         content.state = .error(message)
         showCentered()
     }
 
     override func close() {
         stopDurationTimer()
+        content.actions = []
         super.close()
     }
 
@@ -93,11 +111,54 @@ final class OverlayWindowController: NSWindowController {
     }
 }
 
+private struct OverlayActions: OptionSet {
+    let rawValue: Int
+
+    static let cancel = OverlayActions(rawValue: 1 << 0)
+    static let retry = OverlayActions(rawValue: 1 << 1)
+}
+
 @MainActor
 private final class OverlayView: NSView {
     enum State { case recording(level: Float, duration: Int, fileSize: Int64), processing, success, error(String) }
     private static let maxUploadBytes: Double = 25 * 1024 * 1024
+
+    private let cancelButton = NSButton(title: "×", target: nil, action: nil)
+    private let retryButton = NSButton(title: "↻", target: nil, action: nil)
+
+    var onCancel: (() -> Void)?
+    var onRetry: (() -> Void)?
+
+    var actions: OverlayActions = [] { didSet { updateButtons() } }
     var state: State = .recording(level: 0, duration: 0, fileSize: 0) { didSet { needsDisplay = true } }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        configure(cancelButton, toolTip: "Cancel")
+        configure(retryButton, toolTip: "Cancel and retry transcription")
+        cancelButton.target = self
+        cancelButton.action = #selector(cancelClicked)
+        retryButton.target = self
+        retryButton.action = #selector(retryClicked)
+        addSubview(cancelButton)
+        addSubview(retryButton)
+        updateButtons()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func layout() {
+        super.layout()
+        let size: CGFloat = 24
+        let gap: CGFloat = 6
+        cancelButton.frame = NSRect(x: bounds.width - 40, y: bounds.midY - size / 2, width: size, height: size)
+        retryButton.frame = NSRect(x: cancelButton.frame.minX - size - gap, y: bounds.midY - size / 2, width: size, height: size)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.ignoresMouseEvents = false
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         NSColor.clear.setFill()
@@ -130,7 +191,30 @@ private final class OverlayView: NSView {
             .foregroundColor: NSColor.white,
             .paragraphStyle: paragraph
         ]
-        title.draw(in: NSRect(x: 64, y: bounds.midY - 10, width: bounds.width - 88, height: 24), withAttributes: attrs)
+        let textRightInset: CGFloat = actions.isEmpty ? 88 : 122
+        title.draw(in: NSRect(x: 64, y: bounds.midY - 10, width: bounds.width - textRightInset, height: 24), withAttributes: attrs)
+    }
+
+    private func configure(_ button: NSButton, toolTip: String) {
+        button.bezelStyle = .circular
+        button.isBordered = false
+        button.font = .systemFont(ofSize: 18, weight: .semibold)
+        button.contentTintColor = .white
+        button.toolTip = toolTip
+    }
+
+    private func updateButtons() {
+        cancelButton.isHidden = !actions.contains(.cancel)
+        retryButton.isHidden = !actions.contains(.retry)
+        needsLayout = true
+    }
+
+    @objc private func cancelClicked() {
+        onCancel?()
+    }
+
+    @objc private func retryClicked() {
+        onRetry?()
     }
 
     private func recordingTitle(level: Float, duration: Int, fileSize: Int64) -> String {

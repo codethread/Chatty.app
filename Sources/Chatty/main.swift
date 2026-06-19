@@ -17,6 +17,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var targetPasteApplication: NSRunningApplication?
     private var lastErrorMessage: String?
     private var transcribingIDs = Set<UUID>()
+    private var transcriptionTasks: [UUID: Task<Void, Never>] = [:]
+    private var transcriptionRuns: [UUID: UUID] = [:]
+    private var activeOverlayRecording: Recording?
+    private var activeOverlayPasteAfterCopy = false
 
     private lazy var dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -31,6 +35,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupMenu()
         recorder.onLevelChange = { [weak self] level in self?.overlay.updateLevel(level) }
         recorder.onFileSizeChange = { [weak self] bytes in self?.overlay.updateFileSize(bytes) }
+        overlay.onCancel = { [weak self] in self?.cancelOverlayAction() }
+        overlay.onRetry = { [weak self] in self?.retryOverlayTranscription() }
         shortcut = DoubleShiftShortcut { [weak self] in self?.toggleRecording() }
         shortcut.start()
         escapeShortcut = EscapeShortcut { [weak self] in self?.handleEscape() }
@@ -273,8 +279,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleEscape() {
-        guard recorder.isRecording else { return }
-        cancelRecording()
+        cancelOverlayAction()
+    }
+
+    private func cancelOverlayAction() {
+        if recorder.isRecording {
+            cancelRecording()
+            return
+        }
+
+        guard let activeOverlayRecording else {
+            dismissErrorUI()
+            return
+        }
+        cancelTranscription(id: activeOverlayRecording.id, closeOverlay: true)
+    }
+
+    private func retryOverlayTranscription() {
+        guard let recording = activeOverlayRecording else { return }
+        let pasteAfterCopy = activeOverlayPasteAfterCopy
+        cancelTranscription(id: recording.id, closeOverlay: false)
+        transcribe(recording, pasteAfterCopy: pasteAfterCopy)
     }
 
     private func cancelRecording() {
@@ -283,6 +308,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             escapeShortcut.stop()
             pendingRecordingID = nil
             targetPasteApplication = nil
+            activeOverlayRecording = nil
+            activeOverlayPasteAfterCopy = false
             overlay.close()
         } catch {
             showError(error.localizedDescription)
@@ -298,6 +325,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         lastErrorMessage = message
         refreshMenu()
         overlay.showError(message)
+        errorWindow.show(message: message)
+    }
+
+    private func showTranscriptionError(_ message: String, recording: Recording, pasteAfterCopy: Bool) {
+        lastErrorMessage = message
+        activeOverlayRecording = recording
+        activeOverlayPasteAfterCopy = pasteAfterCopy
+        refreshMenu()
+        overlay.showError(message, canRetry: true)
         errorWindow.show(message: message)
     }
 
@@ -342,35 +378,76 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func transcribe(_ recording: Recording, pasteAfterCopy: Bool = false) {
-        guard !transcribingIDs.contains(recording.id) else { return }
+        guard transcriptionTasks[recording.id] == nil else { return }
+        let runID = UUID()
         transcribingIDs.insert(recording.id)
+        transcriptionRuns[recording.id] = runID
+        escapeShortcut.start()
+        activeOverlayRecording = recording
+        activeOverlayPasteAfterCopy = pasteAfterCopy
         refreshMenu()
-        overlay.showProcessing()
+        overlay.showProcessing(canCancel: true, canRetry: true)
 
-        Task { @MainActor in
+        let task = Task { @MainActor in
             do {
                 let text = try await transcriber.transcribe(file: recording.audioURL)
+                guard !Task.isCancelled else {
+                    finishTranscription(id: recording.id, runID: runID)
+                    return
+                }
                 try store.updateTranscript(for: recording.id, transcript: text)
                 if pasteAfterCopy {
                     copyTranscriptAndPaste(text)
                 } else {
                     copyTextToClipboard(text)
                 }
-                transcribingIDs.remove(recording.id)
-                refreshMenu()
+                finishTranscription(id: recording.id, runID: runID)
                 overlay.showSuccess()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.overlay.close() }
+            } catch is CancellationError {
+                finishTranscription(id: recording.id, runID: runID)
             } catch {
-                transcribingIDs.remove(recording.id)
+                guard !Task.isCancelled else {
+                    finishTranscription(id: recording.id, runID: runID)
+                    return
+                }
+                finishTranscription(id: recording.id, runID: runID)
                 do {
                     try store.updateError(for: recording.id, message: error.localizedDescription)
                 } catch {
                     showError(error.localizedDescription)
                 }
                 refreshMenu()
-                showError(error.localizedDescription)
+                showTranscriptionError(error.localizedDescription, recording: recording, pasteAfterCopy: pasteAfterCopy)
             }
         }
+        transcriptionTasks[recording.id] = task
+    }
+
+    private func cancelTranscription(id: UUID, closeOverlay: Bool) {
+        let runID = transcriptionRuns[id]
+        transcriptionTasks[id]?.cancel()
+        finishTranscription(id: id, runID: runID)
+        if closeOverlay {
+            activeOverlayRecording = nil
+            activeOverlayPasteAfterCopy = false
+            overlay.close()
+        }
+    }
+
+    private func finishTranscription(id: UUID, runID: UUID?) {
+        guard transcriptionRuns[id] == runID else { return }
+        transcriptionTasks[id] = nil
+        transcriptionRuns[id] = nil
+        transcribingIDs.remove(id)
+        if activeOverlayRecording?.id == id {
+            activeOverlayRecording = nil
+            activeOverlayPasteAfterCopy = false
+        }
+        if transcriptionTasks.isEmpty && !recorder.isRecording {
+            escapeShortcut.stop()
+        }
+        refreshMenu()
     }
 }
 

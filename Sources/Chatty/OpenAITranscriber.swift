@@ -13,7 +13,9 @@ struct OpenAITranscriber {
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.httpBody = try multipartBody(file: file, boundary: boundary)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.finishTasksAndInvalidate() }
+        let (data, response) = try await data(for: request, session: session)
         guard let http = response as? HTTPURLResponse else { throw TranscriptionError.badResponse }
         guard (200..<300).contains(http.statusCode) else {
             let body = String(data: data, encoding: .utf8) ?? ""
@@ -21,6 +23,29 @@ struct OpenAITranscriber {
         }
         let decoded = try JSONDecoder().decode(TranscriptionResponse.self, from: data)
         return decoded.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func data(for request: URLRequest, session: URLSession) async throws -> (Data, URLResponse) {
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let task = session.dataTask(with: request) { data, response, error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                        return
+                    }
+
+                    guard let data, let response else {
+                        continuation.resume(throwing: TranscriptionError.badResponse)
+                        return
+                    }
+
+                    continuation.resume(returning: (data, response))
+                }
+                task.resume()
+            }
+        } onCancel: {
+            session.invalidateAndCancel()
+        }
     }
 
     private func multipartBody(file: URL, boundary: String) throws -> Data {
