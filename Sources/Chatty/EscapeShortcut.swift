@@ -63,8 +63,22 @@ private func escapeHotKeyHandler(
     event: EventRef?,
     userData: UnsafeMutableRawPointer?
 ) -> OSStatus {
-    guard let userData else { return noErr }
+    guard let userData, let event else { return OSStatus(eventNotHandledErr) }
     let shortcut = Unmanaged<EscapeShortcut>.fromOpaque(userData).takeUnretainedValue()
+
+    // Only handle our own hotkey; let other hotkeys fall through the handler chain.
+    var hotKeyID = EventHotKeyID()
+    let status = GetEventParameter(
+        event,
+        EventParamName(kEventParamDirectObject),
+        EventParamType(typeEventHotKeyID),
+        nil,
+        MemoryLayout<EventHotKeyID>.size,
+        nil,
+        &hotKeyID
+    )
+    guard status == noErr, hotKeyID.id == 1 else { return OSStatus(eventNotHandledErr) }
+
     Task { @MainActor in shortcut.fire() }
     return noErr
 }

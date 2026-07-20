@@ -28,6 +28,17 @@ swift build
   - Global left-shift double-tap detector using `NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged)`.
   - Requires macOS Accessibility permission.
 
+- `Sources/Chatty/GlobalHotkey.swift`
+  - Single re-registerable Carbon `RegisterEventHotKey` binding; `update(binding:)` rebinds or unbinds.
+  - Used for the optional user-chosen recording chord (in addition to double-shift).
+
+- `Sources/Chatty/ShortcutCaptureController.swift`
+  - Floating panel that captures the next keychord (via a local `keyDown` monitor) into a `KeyBinding`.
+
+- `Sources/Chatty/ShortcutConfig.swift`
+  - `KeyBinding` (keycode + Carbon modifiers + display label) and `ConfigStore`.
+  - `ConfigStore` persists `AppConfig` as JSON at `~/Library/Application Support/Chatty/config.json`.
+
 - `Sources/Chatty/AudioRecorder.swift`
   - Records default microphone input via `AVAudioRecorder` to a temporary `.m4a` file.
   - Emits debounced sound-level state for the overlay.
@@ -53,6 +64,8 @@ swift build
 ## Flow
 
 Double left Shift starts recording. Double left Shift again stops recording, shows processing, uploads audio to OpenAI, copies the transcript to the clipboard, shows success, then closes the overlay. Errors stay visible until replaced or the app quits.
+
+A user-chosen global chord (set via the menu's "Set Recording Shortcut…", stored in `config.json`) toggles recording the same way, alongside double-shift.
 
 ## Permissions
 

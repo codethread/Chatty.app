@@ -9,6 +9,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var recorder = AudioRecorder()
     private var shortcut: DoubleShiftShortcut!
     private var escapeShortcut: EscapeShortcut!
+    private var recordingHotkey: GlobalHotkey!
+    private let configStore = ConfigStore()
+    private let shortcutCapture = ShortcutCaptureController()
+    private var config = AppConfig()
     private let overlay = OverlayWindowController()
     private let errorWindow = ErrorWindowController()
     private let transcriber = OpenAITranscriber()
@@ -40,6 +44,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         shortcut = DoubleShiftShortcut { [weak self] in self?.toggleRecording() }
         shortcut.start()
         escapeShortcut = EscapeShortcut { [weak self] in self?.handleEscape() }
+        recordingHotkey = GlobalHotkey(id: 2) { [weak self] in self?.toggleRecording() }
+        config = configStore.load()
+        recordingHotkey.update(binding: config.recordingShortcut)
         runInitialSetup()
     }
 
@@ -64,6 +71,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "Set OpenAI API Key…", action: #selector(setAPIKey), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "Double Left Shift toggles recording", action: nil, keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Escape cancels active recording", action: nil, keyEquivalent: ""))
+
+        let shortcutTitle = config.recordingShortcut.map { "\($0.label) toggles recording" } ?? "No custom shortcut set"
+        let shortcutStatus = NSMenuItem(title: shortcutTitle, action: nil, keyEquivalent: "")
+        shortcutStatus.isEnabled = false
+        menu.addItem(shortcutStatus)
+        menu.addItem(NSMenuItem(title: "Set Recording Shortcut…", action: #selector(setRecordingShortcut), keyEquivalent: ""))
+        if config.recordingShortcut != nil {
+            menu.addItem(NSMenuItem(title: "Clear Recording Shortcut", action: #selector(clearRecordingShortcut), keyEquivalent: ""))
+        }
         menu.addItem(NSMenuItem.separator())
 
         if lastErrorMessage != nil {
@@ -177,6 +193,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 showError(error.localizedDescription)
             }
+        }
+    }
+
+    @objc private func setRecordingShortcut() {
+        shortcutCapture.begin(current: config.recordingShortcut) { [weak self] binding in
+            self?.applyRecordingShortcut(binding)
+        }
+    }
+
+    @objc private func clearRecordingShortcut() {
+        applyRecordingShortcut(nil)
+    }
+
+    private func applyRecordingShortcut(_ binding: KeyBinding?) {
+        do {
+            config = try configStore.setRecordingShortcut(binding)
+            recordingHotkey.update(binding: config.recordingShortcut)
+            refreshMenu()
+        } catch {
+            showError(error.localizedDescription)
         }
     }
 
