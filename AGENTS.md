@@ -30,7 +30,7 @@ swift build
 
 - `Sources/Chatty/GlobalHotkey.swift`
   - Single re-registerable Carbon `RegisterEventHotKey` binding; `update(binding:)` rebinds or unbinds.
-  - Used for the optional user-chosen recording chord (in addition to double-shift).
+  - Used for the optional user-chosen recording chord that replaces double-shift.
 
 - `Sources/Chatty/ShortcutCaptureController.swift`
   - Floating panel that captures the next keychord (via a local `keyDown` monitor) into a `KeyBinding`.
@@ -65,7 +65,7 @@ swift build
 
 Double left Shift starts recording. Double left Shift again stops recording, shows processing, uploads audio to OpenAI, copies the transcript to the clipboard, shows success, then closes the overlay. Errors stay visible until replaced or the app quits.
 
-A user-chosen global chord (set via the menu's "Set Recording Shortcut…", stored in `config.json`) toggles recording the same way, alongside double-shift.
+The recording toggle is a single binding: double-left-Shift is the default, and setting a custom global chord (menu → "Set Recording Shortcut…", stored in `config.json`) replaces it. "Reset to Double Left Shift" clears the chord.
 
 ## Permissions
 

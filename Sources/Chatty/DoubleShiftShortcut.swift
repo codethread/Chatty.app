@@ -12,9 +12,17 @@ final class DoubleShiftShortcut {
     }
 
     func start() {
+        guard monitor == nil else { return }
         monitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
             Task { @MainActor in self?.handle(event: event) }
         }
+    }
+
+    func stop() {
+        guard let monitor else { return }
+        NSEvent.removeMonitor(monitor)
+        self.monitor = nil
+        lastLeftShiftUp = 0
     }
 
     private func handle(event: NSEvent) {

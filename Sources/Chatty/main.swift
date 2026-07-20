@@ -42,11 +42,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay.onCancel = { [weak self] in self?.cancelOverlayAction() }
         overlay.onRetry = { [weak self] in self?.retryOverlayTranscription() }
         shortcut = DoubleShiftShortcut { [weak self] in self?.toggleRecording() }
-        shortcut.start()
         escapeShortcut = EscapeShortcut { [weak self] in self?.handleEscape() }
         recordingHotkey = GlobalHotkey(id: 2) { [weak self] in self?.toggleRecording() }
         config = configStore.load()
-        recordingHotkey.update(binding: config.recordingShortcut)
+        applyBindings()
         runInitialSetup()
     }
 
@@ -69,16 +68,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "Chatty", action: nil, keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Set OpenAI API Key…", action: #selector(setAPIKey), keyEquivalent: ","))
-        menu.addItem(NSMenuItem(title: "Double Left Shift toggles recording", action: nil, keyEquivalent: ""))
+        let toggleLabel = config.recordingShortcut?.label ?? "Double Left Shift"
+        let toggleStatus = NSMenuItem(title: "\(toggleLabel) toggles recording", action: nil, keyEquivalent: "")
+        toggleStatus.isEnabled = false
+        menu.addItem(toggleStatus)
         menu.addItem(NSMenuItem(title: "Escape cancels active recording", action: nil, keyEquivalent: ""))
 
-        let shortcutTitle = config.recordingShortcut.map { "\($0.label) toggles recording" } ?? "No custom shortcut set"
-        let shortcutStatus = NSMenuItem(title: shortcutTitle, action: nil, keyEquivalent: "")
-        shortcutStatus.isEnabled = false
-        menu.addItem(shortcutStatus)
         menu.addItem(NSMenuItem(title: "Set Recording Shortcut…", action: #selector(setRecordingShortcut), keyEquivalent: ""))
         if config.recordingShortcut != nil {
-            menu.addItem(NSMenuItem(title: "Clear Recording Shortcut", action: #selector(clearRecordingShortcut), keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: "Reset to Double Left Shift", action: #selector(clearRecordingShortcut), keyEquivalent: ""))
         }
         menu.addItem(NSMenuItem.separator())
 
@@ -209,10 +207,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func applyRecordingShortcut(_ binding: KeyBinding?) {
         do {
             config = try configStore.setRecordingShortcut(binding)
-            recordingHotkey.update(binding: config.recordingShortcut)
+            applyBindings()
             refreshMenu()
         } catch {
             showError(error.localizedDescription)
+        }
+    }
+
+    /// The recording toggle is a single binding: a custom chord replaces the
+    /// default double-left-Shift, which is only active when no chord is set.
+    private func applyBindings() {
+        if let binding = config.recordingShortcut {
+            shortcut.stop()
+            recordingHotkey.update(binding: binding)
+        } else {
+            recordingHotkey.update(binding: nil)
+            shortcut.start()
         }
     }
 
