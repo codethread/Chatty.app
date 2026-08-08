@@ -12,6 +12,25 @@ Menu-bar-only macOS dictation helper.
 - Full error text opens in a separate selectable error window.
 - OpenAI API key is saved in Keychain from the menu bar icon.
 
+## Install with Homebrew
+
+Tap this repository, then install Chatty:
+
+```sh
+brew tap codethread/chatty https://github.com/codethread/Chatty.app
+brew install codethread/chatty/chatty
+```
+
+Launch it with `chatty`. The app prompts for Microphone and Accessibility access
+on first launch; set the OpenAI API key from its menu-bar icon.
+
+To update after the formula is updated:
+
+```sh
+brew update
+brew upgrade chatty
+```
+
 ## Build
 
 ```sh
