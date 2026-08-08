@@ -56,6 +56,8 @@ struct KeyBinding: Codable, Equatable {
 
 struct AppConfig: Codable, Equatable {
     var recordingShortcut: KeyBinding?
+    /// Optional free-form context sent as the Transcriptions API `prompt` field.
+    var transcriptionPrompt: String?
 }
 
 /// Persists app configuration as JSON alongside the recordings metadata.
@@ -79,6 +81,14 @@ final class ConfigStore {
     func setRecordingShortcut(_ binding: KeyBinding?) throws -> AppConfig {
         var config = load()
         config.recordingShortcut = binding
+        try save(config)
+        return config
+    }
+
+    @discardableResult
+    func setTranscriptionPrompt(_ prompt: String?) throws -> AppConfig {
+        var config = load()
+        config.transcriptionPrompt = prompt
         try save(config)
         return config
     }

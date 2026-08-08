@@ -68,6 +68,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "Chatty", action: nil, keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Set OpenAI API Key…", action: #selector(setAPIKey), keyEquivalent: ","))
+        let vocabularyTitle = config.transcriptionPrompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? "Edit Transcription Vocabulary…"
+            : "Set Transcription Vocabulary…"
+        menu.addItem(NSMenuItem(title: vocabularyTitle, action: #selector(setTranscriptionVocabulary), keyEquivalent: ""))
         let toggleLabel = config.recordingShortcut?.label ?? "Double Left Shift"
         let toggleStatus = NSMenuItem(title: "\(toggleLabel) toggles recording", action: nil, keyEquivalent: "")
         toggleStatus.isEnabled = false
@@ -197,6 +201,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func setRecordingShortcut() {
         shortcutCapture.begin(current: config.recordingShortcut) { [weak self] binding in
             self?.applyRecordingShortcut(binding)
+        }
+    }
+
+    @objc private func setTranscriptionVocabulary() {
+        let alert = NSAlert()
+        alert.messageText = "Transcription Vocabulary"
+        alert.informativeText = "Add context and spellings for OpenAI to use while transcribing. This is sent as the API prompt. For example: \"This dictation uses software terms: JSON (not Jason), AppKit, Swift Package Manager, and Chatty.\""
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 460, height: 120))
+        textView.isRichText = false
+        textView.font = .systemFont(ofSize: NSFont.systemFontSize)
+        textView.string = config.transcriptionPrompt ?? ""
+        let scrollView = NSScrollView(frame: textView.bounds)
+        scrollView.hasVerticalScroller = true
+        scrollView.borderType = .bezelBorder
+        scrollView.documentView = textView
+        alert.accessoryView = scrollView
+
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn {
+            let prompt = textView.string.trimmingCharacters(in: .whitespacesAndNewlines)
+            do {
+                config = try configStore.setTranscriptionPrompt(prompt.isEmpty ? nil : prompt)
+                refreshMenu()
+            } catch {
+                showError(error.localizedDescription)
+            }
         }
     }
 
@@ -436,7 +469,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let task = Task { @MainActor in
             do {
-                let text = try await transcriber.transcribe(file: recording.audioURL)
+                let text = try await transcriber.transcribe(file: recording.audioURL, prompt: config.transcriptionPrompt)
                 guard !Task.isCancelled else {
                     finishTranscription(id: recording.id, runID: runID)
                     return

@@ -1,7 +1,7 @@
 import Foundation
 
 struct OpenAITranscriber {
-    func transcribe(file: URL) async throws -> String {
+    func transcribe(file: URL, prompt: String?) async throws -> String {
         let apiKey = KeychainStore.readAPIKey().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !apiKey.isEmpty else { throw TranscriptionError.missingAPIKey }
 
@@ -11,7 +11,7 @@ struct OpenAITranscriber {
 
         let boundary = "Boundary-\(UUID().uuidString)"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try multipartBody(file: file, boundary: boundary)
+        request.httpBody = try multipartBody(file: file, prompt: prompt, boundary: boundary)
 
         let session = URLSession(configuration: .ephemeral)
         defer { session.finishTasksAndInvalidate() }
@@ -48,13 +48,20 @@ struct OpenAITranscriber {
         }
     }
 
-    private func multipartBody(file: URL, boundary: String) throws -> Data {
+    private func multipartBody(file: URL, prompt: String?, boundary: String) throws -> Data {
         var data = Data()
         func append(_ string: String) { data.append(Data(string.utf8)) }
 
         append("--\(boundary)\r\n")
         append("Content-Disposition: form-data; name=\"model\"\r\n\r\n")
         append("gpt-4o-transcribe\r\n")
+
+        if let prompt = prompt?.trimmingCharacters(in: .whitespacesAndNewlines), !prompt.isEmpty {
+            append("--\(boundary)\r\n")
+            append("Content-Disposition: form-data; name=\"prompt\"\r\n\r\n")
+            append(prompt)
+            append("\r\n")
+        }
 
         append("--\(boundary)\r\n")
         append("Content-Disposition: form-data; name=\"file\"; filename=\"recording.m4a\"\r\n")
