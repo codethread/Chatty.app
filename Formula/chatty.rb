@@ -9,7 +9,7 @@ class Chatty < Formula
   depends_on macos: :sequoia
 
   def install
-    system "swift", "build", "-c", "release"
+    system "swift", "build", "-c", "release", "--disable-sandbox"
 
     app = prefix/"Chatty.app"
     (app/"Contents/MacOS").mkpath
