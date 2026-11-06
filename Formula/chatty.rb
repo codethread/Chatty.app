@@ -3,10 +3,10 @@ class Chatty < Formula
   homepage "https://github.com/codethread/Chatty.app"
   url "https://github.com/codethread/Chatty.app.git",
       branch:   "main",
-      revision: "0311040f1732cafe1f16a72570ad80adca18924d"
-  version "0.1.0"
+      revision: "097b3a359f1028277c17ea5f2d858b79c556981e"
+  version "0.2.0"
 
-  depends_on macos: :sequoia
+  depends_on macos: :tahoe
 
   def install
     system "swift", "build", "-c", "release", "--disable-sandbox"
