@@ -58,6 +58,9 @@ struct AppConfig: Codable, Equatable {
     var recordingShortcut: KeyBinding?
     /// Optional free-form context sent as the Transcriptions API `prompt` field.
     var transcriptionPrompt: String?
+    var correctionSettings: CorrectionSettings?
+
+    var effectiveCorrectionSettings: CorrectionSettings { correctionSettings ?? .default }
 }
 
 /// Persists app configuration as JSON alongside the recordings metadata.
@@ -70,16 +73,14 @@ final class ConfigStore {
         return encoder
     }()
 
-    func load() -> AppConfig {
-        guard let data = try? Data(contentsOf: Self.url),
-              let config = try? JSONDecoder().decode(AppConfig.self, from: data)
-        else { return AppConfig() }
-        return config
+    func load() throws -> AppConfig {
+        guard FileManager.default.fileExists(atPath: Self.url.path) else { return AppConfig() }
+        return try JSONDecoder().decode(AppConfig.self, from: Data(contentsOf: Self.url))
     }
 
     @discardableResult
     func setRecordingShortcut(_ binding: KeyBinding?) throws -> AppConfig {
-        var config = load()
+        var config = try load()
         config.recordingShortcut = binding
         try save(config)
         return config
@@ -87,8 +88,16 @@ final class ConfigStore {
 
     @discardableResult
     func setTranscriptionPrompt(_ prompt: String?) throws -> AppConfig {
-        var config = load()
+        var config = try load()
         config.transcriptionPrompt = prompt
+        try save(config)
+        return config
+    }
+
+    @discardableResult
+    func setCorrectionSettings(_ settings: CorrectionSettings) throws -> AppConfig {
+        var config = try load()
+        config.correctionSettings = settings
         try save(config)
         return config
     }

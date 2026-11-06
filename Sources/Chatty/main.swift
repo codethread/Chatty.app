@@ -6,7 +6,6 @@ import Foundation
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var recordingsMenu = NSMenu(title: "Recordings")
-    private var recorder = AudioRecorder()
     private var shortcut: DoubleShiftShortcut!
     private var escapeShortcut: EscapeShortcut!
     private var recordingHotkey: GlobalHotkey!
@@ -14,10 +13,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let shortcutCapture = ShortcutCaptureController()
     private var config = AppConfig()
     private let overlay = OverlayWindowController()
+    private let openAICredentials = OpenAICredentials()
+    #if CHATTY_DEBUG_PANEL
+    private let input = DebugTextInputService()
+    private lazy var debugCorrector = DebugSentenceCorrector(credentials: openAICredentials)
+    private lazy var corrections = CorrectionController(corrector: debugCorrector)
+    private lazy var debugPanel = DebugPanelController(input: input, controller: dictation, corrector: debugCorrector,
+                                                      onSetAPIKey: { [weak self] in self?.setAPIKey() })
+    #else
+    private let input = MicrophoneDictationService()
+    private lazy var corrections = CorrectionController(corrector: OpenAISentenceCorrector(credentials: openAICredentials))
+    #endif
+    private lazy var dictation = DictationController(input: input, corrections: corrections, overlay: overlay, recordings: store)
     private let errorWindow = ErrorWindowController()
+    private lazy var correctionSettingsWindow = CorrectionSettingsWindowController { [unowned self] settings in
+        config = try configStore.setCorrectionSettings(settings)
+        corrections.settings = settings
+        refreshMenu()
+    }
     private let transcriber = OpenAITranscriber()
     private let store = try! RecordingStore()
-    private var pendingRecordingID: UUID?
     private var targetPasteApplication: NSRunningApplication?
     private var lastErrorMessage: String?
     private var transcribingIDs = Set<UUID>()
@@ -34,19 +49,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if CHATTY_DEBUG_PANEL
+        NSApp.setActivationPolicy(.regular)
+        #else
         NSApp.setActivationPolicy(.accessory)
+        #endif
         pruneExpiredRecordings()
         setupMenu()
-        recorder.onLevelChange = { [weak self] level in self?.overlay.updateLevel(level) }
-        recorder.onFileSizeChange = { [weak self] bytes in self?.overlay.updateFileSize(bytes) }
         overlay.onCancel = { [weak self] in self?.cancelOverlayAction() }
         overlay.onRetry = { [weak self] in self?.retryOverlayTranscription() }
         shortcut = DoubleShiftShortcut { [weak self] in self?.toggleRecording() }
         escapeShortcut = EscapeShortcut { [weak self] in self?.handleEscape() }
         recordingHotkey = GlobalHotkey(id: 2) { [weak self] in self?.toggleRecording() }
-        config = configStore.load()
+        dictation.onActivityChange = { [weak self] active in
+            guard let self else { return }
+            if active || !self.transcriptionTasks.isEmpty {
+                self.escapeShortcut.start()
+            } else {
+                self.escapeShortcut.stop()
+            }
+        }
+        dictation.onCopy = { [weak self] text in self?.copyTextToClipboard(text) }
+        dictation.onComplete = { [weak self] _ in
+            #if !CHATTY_DEBUG_PANEL
+            self?.pasteTranscript()
+            #endif
+            self?.refreshMenu()
+        }
+        dictation.onError = { [weak self] message in self?.showError(message) }
+        do {
+            config = try configStore.load()
+        } catch {
+            showError("Could not load Chatty settings: \(error.localizedDescription)")
+            return
+        }
+        corrections.settings = config.effectiveCorrectionSettings
         applyBindings()
+        #if CHATTY_DEBUG_PANEL
+        let appMenu = NSMenu()
+        appMenu.addItem(NSMenuItem(title: "Show Debug Panel…", action: #selector(showDebugPanel), keyEquivalent: "0"))
+        appMenu.addItem(NSMenuItem(title: "Sentence Cleanup…", action: #selector(editSentenceCleanup), keyEquivalent: ","))
+        appMenu.addItem(.separator())
+        appMenu.addItem(NSMenuItem(title: "Quit Chatty", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        let mainMenu = NSMenu()
+        let appMenuItem = NSMenuItem()
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
+        editMenu.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
+        editMenu.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
+        editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
+        let editMenuItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
+        NSApp.mainMenu = mainMenu
+        debugPanel.show()
+        #else
         runInitialSetup()
+        #endif
     }
 
     private func pruneExpiredRecordings() {
@@ -65,9 +126,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func refreshMenu() {
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Chatty", action: nil, keyEquivalent: ""))
+        let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Chatty"
+        menu.addItem(NSMenuItem(title: appName, action: nil, keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Set OpenAI API Key…", action: #selector(setAPIKey), keyEquivalent: ","))
+        menu.addItem(NSMenuItem(title: "Sentence Cleanup…", action: #selector(editSentenceCleanup), keyEquivalent: ""))
         let vocabularyTitle = config.transcriptionPrompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             ? "Edit Transcription Vocabulary…"
             : "Set Transcription Vocabulary…"
@@ -76,7 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let toggleStatus = NSMenuItem(title: "\(toggleLabel) toggles recording", action: nil, keyEquivalent: "")
         toggleStatus.isEnabled = false
         menu.addItem(toggleStatus)
-        menu.addItem(NSMenuItem(title: "Escape cancels active recording", action: nil, keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Escape copies text and closes recording", action: nil, keyEquivalent: ""))
 
         menu.addItem(NSMenuItem(title: "Set Recording Shortcut…", action: #selector(setRecordingShortcut), keyEquivalent: ""))
         if config.recordingShortcut != nil {
@@ -93,9 +156,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(recordingsItem)
 
         menu.addItem(NSMenuItem.separator())
+        #if CHATTY_DEBUG_PANEL
+        menu.addItem(NSMenuItem(title: "Show Debug Panel…", action: #selector(showDebugPanel), keyEquivalent: ""))
+        #endif
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         statusItem.menu = menu
     }
+
+    #if CHATTY_DEBUG_PANEL
+    @objc private func showDebugPanel() {
+        debugPanel.show()
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        debugPanel.show()
+        return true
+    }
+    #endif
 
     private func buildRecordingsMenu() -> NSMenu {
         let menu = NSMenu(title: "Recordings")
@@ -171,12 +248,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)
 
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(1))
-            if KeychainStore.readAPIKey().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                setAPIKey()
-            }
-        }
     }
 
     @objc private func setAPIKey() {
@@ -186,14 +257,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
         let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 420, height: 24))
-        field.stringValue = KeychainStore.readAPIKey()
+        field.placeholderString = "Enter a new API key"
         alert.accessoryView = field
         NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn {
-            do {
-                try KeychainStore.saveAPIKey(field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines))
-            } catch {
-                showError(error.localizedDescription)
+            let key = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            Task {
+                do {
+                    guard !key.isEmpty else { throw TranscriptionError.missingAPIKey }
+                    try await Task.detached { try KeychainStore.saveAPIKey(key) }.value
+                    await openAICredentials.use(key)
+                } catch {
+                    showError(error.localizedDescription)
+                }
             }
         }
     }
@@ -202,6 +278,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         shortcutCapture.begin(current: config.recordingShortcut) { [weak self] binding in
             self?.applyRecordingShortcut(binding)
         }
+    }
+
+    @objc private func editSentenceCleanup() {
+        correctionSettingsWindow.show(settings: config.effectiveCorrectionSettings)
     }
 
     @objc private func setTranscriptionVocabulary() {
@@ -328,32 +408,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func toggleRecording() {
         Task { @MainActor in
-            if recorder.isRecording {
-                do {
-                    overlay.showProcessing()
-                    let file = try recorder.stop()
-                    escapeShortcut.stop()
-                    guard let pendingRecordingID else { throw AudioError.notRecording }
-                    self.pendingRecordingID = nil
-                    let recording = try store.addRecording(id: pendingRecordingID, audioURL: file)
-                    refreshMenu()
-                    transcribe(recording, pasteAfterCopy: true)
-                } catch {
-                    showError(error.localizedDescription)
-                }
-            } else {
-                do {
-                    let destination = try store.makeRecordingURL()
-                    pendingRecordingID = destination.id
-                    targetPasteApplication = NSWorkspace.shared.frontmostApplication
-                    try await recorder.start(fileURL: destination.url)
-                    escapeShortcut.start()
-                    overlay.showRecording()
-                } catch {
-                    pendingRecordingID = nil
-                    showError(error.localizedDescription)
-                }
-            }
+            if !dictation.isActive { targetPasteApplication = NSWorkspace.shared.frontmostApplication }
+            await dictation.toggle()
         }
     }
 
@@ -362,7 +418,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func cancelOverlayAction() {
-        if recorder.isRecording {
+        if dictation.isActive {
             cancelRecording()
             return
         }
@@ -382,16 +438,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func cancelRecording() {
-        do {
-            try recorder.cancel()
-            escapeShortcut.stop()
-            pendingRecordingID = nil
+        Task {
+            await dictation.cancel()
             targetPasteApplication = nil
             activeOverlayRecording = nil
             activeOverlayPasteAfterCopy = false
-            overlay.close()
-        } catch {
-            showError(error.localizedDescription)
         }
     }
 
@@ -423,7 +474,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func copyTranscriptAndPaste(_ transcript: String) {
         copyTextToClipboard(transcript)
+        pasteTranscript()
+    }
 
+    private func pasteTranscript() {
         let targetApplication = targetPasteApplication
         targetPasteApplication = nil
         targetApplication?.activate(options: [])
@@ -523,7 +577,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             activeOverlayRecording = nil
             activeOverlayPasteAfterCopy = false
         }
-        if transcriptionTasks.isEmpty && !recorder.isRecording {
+        if transcriptionTasks.isEmpty && !dictation.isActive {
             escapeShortcut.stop()
         }
         refreshMenu()

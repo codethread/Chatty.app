@@ -1,9 +1,29 @@
 import Foundation
 import Security
+import LocalAuthentication
 
 enum KeychainStore {
     private static let service = "Chatty.OpenAI"
     private static let account = "apiKey"
+
+    /// Disable biometric interaction. The legacy login Keychain may still
+    /// require macOS to approve this app's access to the existing item.
+    static func requireAPIKey() throws -> String {
+        let context = LAContext()
+        context.interactionNotAllowed = true
+        var query = baseQuery()
+        query[kSecUseAuthenticationContext as String] = context
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status != errSecItemNotFound else { throw TranscriptionError.missingAPIKey }
+        guard status == errSecSuccess else { throw KeychainError.status(status) }
+        guard let data = item as? Data,
+              let key = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !key.isEmpty else { throw TranscriptionError.missingAPIKey }
+        return key
+    }
 
     static func readAPIKey() -> String {
         var query = baseQuery()

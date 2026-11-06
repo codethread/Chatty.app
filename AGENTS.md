@@ -4,13 +4,19 @@
 
 Chatty is a Swift/AppKit macOS menu-bar-only dictation app. It targets recent Apple Silicon macOS and is built with Swift Package Manager.
 
+## User profile and design scope
+
+- Single-user desktop tool used in a quiet office with little background noise; simple volume-based silence detection is an acceptable starting assumption.
+- Prefer small, reliable implementations using native APIs and minimal dependencies over general-purpose audio processing.
+- Silence trimming is intended to reduce upload payload size and upload time. Preserve speech over maximizing compression; handling noisy environments is outside the current scope.
+
 ## Build / install
 
 ```sh
 ./scripts/build-app.sh
 ```
 
-This builds `build/Chatty.app`, quits any running Chatty process, replaces `/Applications/Chatty.app`, and opens it unless `--no-open` is passed. Use `--reset-permissions` to reset Chatty TCC permissions before replacing the installed app.
+The default installs a numbered debug app. Use `--no-debug` for real microphone input, and add `--no-build-id` for plain `/Applications/Chatty.app`. Production builds reset Microphone/Accessibility permissions by default. See [README build options](README.md#build) for combinations and the debug launcher.
 
 After any code edit, run at least:
 
@@ -20,63 +26,18 @@ swift build
 
 ## Architecture
 
-- `Sources/Chatty/main.swift`
-  - App entrypoint and `NSApplicationDelegate`.
-  - Sets accessory/menu-bar mode, builds the status item menu, wires recording/shortcut/transcription flow.
-
-- `Sources/Chatty/DoubleShiftShortcut.swift`
-  - Global left-shift double-tap detector using `NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged)`.
-  - Requires macOS Accessibility permission.
-
-- `Sources/Chatty/GlobalHotkey.swift`
-  - Single re-registerable Carbon `RegisterEventHotKey` binding; `update(binding:)` rebinds or unbinds.
-  - Used for the optional user-chosen recording chord that replaces double-shift.
-
-- `Sources/Chatty/ShortcutCaptureController.swift`
-  - Floating panel that captures the next keychord (via a local `keyDown` monitor) into a `KeyBinding`.
-
-- `Sources/Chatty/ShortcutConfig.swift`
-  - `KeyBinding` (keycode + Carbon modifiers + display label) and `ConfigStore`.
-  - `ConfigStore` persists `AppConfig` as JSON at `~/Library/Application Support/Chatty/config.json`.
-
-- `Sources/Chatty/AudioRecorder.swift`
-  - Records default microphone input via `AVAudioRecorder` to a temporary `.m4a` file.
-  - Emits debounced sound-level state for the overlay.
-  - Requires Microphone permission.
-
-- `Sources/Chatty/OpenAITranscriber.swift`
-  - Multipart upload to OpenAI `/v1/audio/transcriptions` using `gpt-4o-transcribe`.
-  - Returns trimmed transcript text.
-
-- `Sources/Chatty/KeychainStore.swift`
-  - Stores/loads the OpenAI API key from macOS Keychain.
-
-- `Sources/Chatty/OverlayWindowController.swift`
-  - Floating bottom-center non-activating overlay.
-  - Shows recording, sound detected, transcribing, success, and error states.
-
-- `Sources/Chatty/Settings.swift`
-  - Small constants for shortcut timing and meter behavior.
-
-- `Sources/Chatty/Info.plist`
-  - App bundle metadata, `LSUIElement`, and microphone usage description.
-
-## Flow
-
-Double left Shift starts recording. Double left Shift again stops recording, shows processing, uploads audio to OpenAI, copies the transcript to the clipboard, shows success, then closes the overlay. Errors stay visible until replaced or the app quits.
-
-The recording toggle is a single binding: double-left-Shift is the default, and setting a custom global chord (menu → "Set Recording Shortcut…", stored in `config.json`) replaces it. "Reset to Double Left Shift" clears the chord.
+Read the [C4 architecture](docs/architecture.md) before changing component responsibilities, service interfaces, dependencies, or dictation data flow. Update it in the same change when those boundaries or runtime contracts change. Keep it lean: C1–C3 diagrams, key source links, and current contracts; replace stale details rather than accumulating history or duplicating code inventories here.
 
 ## Permissions
 
-- Microphone: required for `AVAudioRecorder`.
+- Microphone: required for `AVAudioEngine` capture.
 - Accessibility: required for the global modifier-key monitor.
 - Avoid Input Monitoring unless reintroducing `CGEventTap`; listen-only event taps can trigger that broader permission.
 - Apps cannot programmatically grant TCC permissions. `tccutil` is a macOS developer/admin CLI for resetting permission state only.
-- `runInitialSetup()` prompts early for Microphone/Accessibility and reads Keychain once so any Keychain trust prompt happens at startup. If no API key exists, it opens the API-key dialog.
+- Production startup requests Microphone/Accessibility. Sentence cleanup loads its key asynchronously on first use and caches it; macOS may request Keychain trust for a new build. Debug startup skips microphone and Accessibility prompts.
 
 ## Notes
 
 - Prefer fail-loud behavior over silent fallbacks.
-- Keep this app menu-bar-only; do not add a Dock/main-window app model unless explicitly requested.
+- Keep production menu-bar-only; the compile-time debug harness uses a regular floating control window.
 - API keys belong in Keychain, not config files.
