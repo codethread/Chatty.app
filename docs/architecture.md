@@ -26,6 +26,10 @@ recording uploads its audio separately.
 ## C2 — Containers
 
 The deployable container is the desktop app; there is no Chatty backend server.
+[package-release.sh](../scripts/package-release.sh) builds an ad-hoc-signed Apple
+Silicon app archive for GitHub Releases. The [Homebrew cask](../Casks/chatty.rb)
+installs that prebuilt app in `/Applications` and links its `chatty` command;
+installation does not compile Swift or reset permissions.
 
 ```mermaid
 flowchart LR

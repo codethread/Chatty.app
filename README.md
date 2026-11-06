@@ -21,19 +21,25 @@ Tap this repository, then install Chatty:
 
 ```sh
 brew tap codethread/chatty https://github.com/codethread/Chatty.app
-brew install codethread/chatty/chatty
+brew install --cask codethread/chatty/chatty
 ```
 
-Launch it with `chatty`. The app prompts for Microphone and Accessibility access
+The cask installs `/Applications/Chatty.app` and the `chatty` command. If you
+installed the old formula, first remove it with `brew uninstall --formula chatty`.
+Launch Chatty from Applications or with `open -a Chatty`.
+
+The release is ad-hoc signed, not notarized. If macOS blocks its first launch,
+allow it in **System Settings → Privacy & Security → Open Anyway**.
+The app prompts for Microphone and Accessibility access
 on first launch. Speech recognition uses Apple's on-device model, which downloads
 on first use if it is not already installed. Sentence cleanup uses the OpenAI
 API key saved in Chatty's Keychain entry.
 
-To update after the formula is updated:
+To update after the cask is updated:
 
 ```sh
 brew update
-brew upgrade chatty
+brew upgrade --cask codethread/chatty/chatty
 ```
 
 ## Build
@@ -167,8 +173,8 @@ After reproducing a failure, inspect recent entries:
 See the [C4 architecture](docs/architecture.md) for system boundaries, components,
 and the dictation lifecycle.
 
-This requires macOS 26 or later on Apple Silicon and Swift 6.2 or later. Live
-dictation uses `SpeechAnalyzer` and `SpeechTranscriber`; unsupported locales or
-unavailable models produce a visible error. No Apple Developer account is
+This requires macOS 26 or later on Apple Silicon. Building from source also
+requires Swift 6.2 or later. Live dictation uses `SpeechAnalyzer` and
+`SpeechTranscriber`; unsupported locales or unavailable models produce a visible error. No Apple Developer account is
 required for local unsigned builds. Distribution outside your machine may need
 signing/notarization.
