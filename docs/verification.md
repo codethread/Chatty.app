@@ -48,7 +48,8 @@ and keep format/text variants in the existing faster suites.
 
 - [x] **Auto IO:** Production ZIP signing, menu-bar identity and debug exclusion. [Archive check](../scripts/verify-release.swift).
 - [x] **Auto UI:** Fresh debug storage, relaunch and isolation from production. `testStreamingQueueStopAndPersistence`, `testCleanupSettingsValidationCancelResetAndPayload`.
-- [ ] **Manual:** Homebrew install/upgrade, installed menu-bar launch and the `chatty` launcher.
+- [x] **Agent-operated IO:** Homebrew upgraded 0.3.0 → 0.4.0 from the published release, 2026-11-07. Verified the archive checksum/signature, installed version/menu-bar identity, exact installed binary and `chatty` symlink target; opened `/Applications/Chatty.app` and confirmed its process running. Local record: `build/homebrew-0.4.0-verification.json`.
+- [ ] **Manual:** Fresh Homebrew install, installed menu interaction and invoking the `chatty` launcher from Terminal. The agent-operated upgrade check above does not exercise those interactions.
 - [ ] **Manual:** Production Microphone/Accessibility allow/deny, visible failures and recovery after permission changes.
 - [ ] **Manual:** API-key menu, real Keychain save/trust, replacement and relaunch. The debug suite supplies a fake key.
 - [x] **Unit/DI:** Shared credential loading/cache, cancellation, replacement and retry with an injected loader. [CredentialsTests](../Tests/ChattyTests/PersistenceAndCredentialsTests.swift).
