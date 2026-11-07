@@ -31,9 +31,7 @@ struct PiTranscriptCorrector: TranscriptCorrecting {
             guard process.terminationStatus == 0 else {
                 throw PiCorrectionError.failed(process.terminationStatus, String(decoding: diagnostics, as: UTF8.self))
             }
-            let corrected = String(decoding: response, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !corrected.isEmpty else { throw PiCorrectionError.emptyResponse }
-            return corrected
+            return try TranscriptEdit.decode(response)
         } onCancel: {
             if process.isRunning { process.terminate() }
         }
@@ -42,12 +40,10 @@ struct PiTranscriptCorrector: TranscriptCorrecting {
 
 private enum PiCorrectionError: LocalizedError {
     case failed(Int32, String)
-    case emptyResponse
 
     var errorDescription: String? {
         switch self {
         case .failed(let status, let details): "Transcript cleanup failed (pi exit \(status)): \(details.trimmingCharacters(in: .whitespacesAndNewlines))"
-        case .emptyResponse: "Transcript cleanup returned no text."
         }
     }
 }

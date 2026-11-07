@@ -57,7 +57,7 @@ final class CorrectionController {
         guard worker == nil, failure == nil else { return }
         worker = Task { [weak self] in
             while let self, !Task.isCancelled {
-                let start = TranscriptLayout.contextStart(in: self.document.stableText,
+                let start = TranscriptLayout.contextStart(in: self.document.correctedText,
                                                           lines: self.settings.contextLines, width: self.contextWidth)
                 guard let batch = self.document.nextBatch(contextStart: start) else {
                     self.activeBatch = nil

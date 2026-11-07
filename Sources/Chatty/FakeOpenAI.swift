@@ -25,6 +25,7 @@ actor FakeOpenAI {
     private(set) var receipts: [Receipt] = []
     private var behavior: Behavior = .success
     private var audioText = "Saved audio transcription"
+    private var correctionText: String?
     private var held: [CheckedContinuation<Void, Never>] = []
     private var observers: [UUID: AsyncStream<Void>.Continuation] = [:]
 
@@ -35,9 +36,10 @@ actor FakeOpenAI {
         }
     }
 
-    func configure(behavior: Behavior, audioText: String? = nil) {
+    func configure(behavior: Behavior, audioText: String? = nil, correctionText: String? = nil) {
         self.behavior = behavior
         if let audioText { self.audioText = audioText }
+        self.correctionText = correctionText
     }
 
     func currentBehavior() -> Behavior { behavior }
@@ -52,6 +54,7 @@ actor FakeOpenAI {
         release()
         receipts.removeAll()
         behavior = .success
+        correctionText = nil
     }
 
     func stop() async { release(); await server.stop() }
@@ -100,6 +103,7 @@ actor FakeOpenAI {
                 let payload = try JSONDecoder().decode(ResponsePayload.self, from: request.body)
                 guard !payload.model.isEmpty, !payload.instructions.isEmpty,
                       payload.reasoning.effort == "none", payload.text.verbosity == "low",
+                      payload.text.format.type == "json_schema", payload.text.format.strict,
                       payload.store == false, payload.service_tier == "priority" else {
                     throw InvalidRequest(message: "Invalid Chatty Responses payload")
                 }
@@ -107,7 +111,7 @@ actor FakeOpenAI {
                                         instructions: payload.instructions, model: payload.model,
                                         payload: String(decoding: request.body, as: UTF8.self),
                                         audioBytes: nil, audioSHA256: nil, prompt: nil, behavior: selected))
-                output = Self.screamingSnake(payload.input)
+                output = correctionText ?? Self.screamingSnake(payload.input)
             } else if request.path == "/v1/audio/transcriptions" {
                 let fields = try Self.multipart(request)
                 guard let audio = fields["file"], !audio.isEmpty, let model = fields["model"] else {
@@ -129,7 +133,10 @@ actor FakeOpenAI {
             case .serverError: response = errorResponse(500, "Injected server failure")
             case .disconnect: response = LocalHTTPResponse(disconnect: true)
             case .malformed: response = LocalHTTPResponse(body: Data("not JSON".utf8))
-            case .empty: response = try completion("", path: request.path)
+            case .empty:
+                if request.path == "/v1/responses" {
+                    response = LocalHTTPResponse(body: Data(#"{"status":"completed","output":[]}"#.utf8))
+                } else { response = try completion("", path: request.path) }
             case .refused:
                 response = LocalHTTPResponse(body: Data(#"{"status":"completed","output":[{"type":"message","content":[{"type":"refusal","refusal":"Injected refusal"}]}]}"#.utf8))
             case .incomplete:
@@ -145,8 +152,9 @@ actor FakeOpenAI {
 
     private func completion(_ text: String, path: String) throws -> LocalHTTPResponse {
         if path == "/v1/audio/transcriptions" { return try .json(["text": text]) }
+        let edited = String(decoding: try JSONEncoder().encode(TranscriptEdit(text: text)), as: UTF8.self)
         let payload: [String: Any] = ["status": "completed", "service_tier": "priority",
-                                    "output": [["type": "message", "content": [["type": "output_text", "text": text]]]]]
+                                    "output": [["type": "message", "content": [["type": "output_text", "text": edited]]]]]
         return LocalHTTPResponse(body: try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]))
     }
 
@@ -156,7 +164,11 @@ actor FakeOpenAI {
 
     private struct ResponsePayload: Decodable {
         struct Reasoning: Decodable { let effort: String }
-        struct Text: Decodable { let verbosity: String }
+        struct Text: Decodable {
+            struct Format: Decodable { let type: String; let strict: Bool }
+            let verbosity: String
+            let format: Format
+        }
         let model: String
         let instructions: String
         let input: String

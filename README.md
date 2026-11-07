@@ -63,8 +63,8 @@ recognizer. You can switch back to Apple in the same window.
 ## Sentence cleanup
 
 Open **Sentence Cleanup…** to change the instructions, recent context size and
-word dictionary sent to OpenAI. Context defaults to three wrapped transcript
-lines; newly completed speech is always included. Preferred spellings use one
+word dictionary sent to OpenAI. Context defaults to three wrapped lines of
+previously corrected text, plus all newly completed speech. Preferred spellings use one
 mapping per line:
 
 ```text
@@ -75,6 +75,12 @@ open ai = OpenAI
 **Save** applies changes to subsequent cleanup requests. **Reset to Defaults**
 changes the editor's fields; save to apply them. Chatty does not learn dictionary
 entries automatically.
+
+Address spoken editing requests to “the tape” or “the transcription”, for example
+“for the tape, remove the last two sentences”. Cleanup can rewrite or delete
+multiple sentences in the supplied passage. Older text outside the context
+window stays fixed. If you delete the entire passage, you can keep dictating;
+stopping with no text left saves the recording without copying or pasting.
 
 ## Recordings and privacy
 

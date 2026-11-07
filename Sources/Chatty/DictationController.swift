@@ -129,10 +129,10 @@ final class DictationController {
             sessionID = nil
             destination = nil
             streamTask = nil
-            onCopy?(correctedText)
+            if !correctedText.isEmpty { onCopy?(correctedText) }
             clearTranscript()
             setPhase(.complete)
-            onComplete?(correctedText)
+            if !correctedText.isEmpty { onComplete?(correctedText) }
         } catch {
             await fail(error, session: id)
         }

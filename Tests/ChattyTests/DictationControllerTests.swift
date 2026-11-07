@@ -7,6 +7,63 @@ import Testing
 @MainActor
 @Suite(.timeLimit(.minutes(1)))
 struct DictationControllerTests {
+    @Test func longNewSpeechKeepsTheFullLookbackAndCanRewriteSeveralCorrectedSentences() async throws {
+        try await withController { fixture in
+            let first = "Sentence number one. Sentence number two. Sentence number three."
+            await fixture.fake.configure(behavior: .success, correctionText: first)
+            await fixture.controller.start()
+            try fixture.input.inject(.init(committedText: first, partialText: ""))
+            try await fixture.wait { fixture.controller.correctionState.correctedText == first }
+            let newSpeech = Array(repeating: "This is a long new sentence that must not consume the earlier correction context.", count: 5).joined(separator: " ")
+            await fixture.fake.configure(behavior: .success, correctionText: "All three sentences were rewritten.")
+            try fixture.input.inject(.init(committedText: first + " " + newSpeech, partialText: ""))
+            await fixture.controller.stop()
+
+            let requests = await fixture.fake.receipts
+            #expect(requests.count == 2)
+            #expect(requests.last?.input == first + " " + newSpeech)
+            #expect(fixture.copies == ["All three sentences were rewritten."])
+            #expect(fixture.completions == fixture.copies)
+            #expect(fixture.errors.isEmpty)
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func deletingTheEntirePassageCanStopWithoutPastingOrContinueWithFreshText(continueDictating: Bool) async throws {
+        try await withController { fixture in
+            let first = "Sentence number one. Sentence number two. Sentence number three."
+            await fixture.fake.configure(behavior: .success, correctionText: first)
+            await fixture.controller.start()
+            try fixture.input.inject(.init(committedText: first, partialText: ""))
+            try await fixture.wait { fixture.controller.correctionState.correctedText == first }
+            let deletion = first + " Okay for the tape, please delete all sentences."
+            await fixture.fake.configure(behavior: .success, correctionText: "")
+            try fixture.input.inject(.init(committedText: deletion, partialText: ""))
+            let requests = try await fixture.fake.waitForRequests(2)
+            #expect(requests.last?.input == deletion)
+            try await fixture.wait {
+                if case .failed = fixture.controller.phase { return true }
+                return fixture.controller.correctionState.text.isEmpty && fixture.controller.correctionState.pendingText.isEmpty
+            }
+            try #require(fixture.controller.phase == .listening)
+            #expect(fixture.presentation.document.text.isEmpty)
+            #expect(fixture.errors.isEmpty)
+            if continueDictating {
+                await fixture.fake.configure(behavior: .success, correctionText: "A fresh start.")
+                try fixture.input.inject(.init(committedText: deletion + " A fresh start.", partialText: ""))
+            }
+            await fixture.controller.stop()
+            #expect(fixture.controller.phase == .complete)
+            #expect(fixture.copies == (continueDictating ? ["A fresh start."] : []))
+            #expect(fixture.completions == fixture.copies)
+            let saved = try #require(fixture.store.load().first)
+            #expect(saved.transcript == (continueDictating ? "A fresh start." : ""))
+            #expect(saved.transcriptionError == nil)
+            #expect(try AVAudioFile(forReading: fixture.store.audioURL(for: saved)).length > 0)
+            if continueDictating { #expect(await fixture.fake.receipts.last?.input == "A fresh start.") }
+        }
+    }
+
     @Test func stopFinalizesTailCopiesOnceAndPersistsPlayableAudioAndTranscript() async throws {
         try await withController { fixture in
             await fixture.controller.start()

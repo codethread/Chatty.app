@@ -18,13 +18,37 @@ struct OpenAITranscriptCorrectorTests {
         #expect((body["reasoning"] as? [String: String])?["effort"] == "none")
         #expect(body["store"] as? Bool == false)
         #expect(body["service_tier"] as? String == "priority")
+        let format = try #require((body["text"] as? [String: Any])?["format"] as? [String: Any])
+        #expect(format["type"] as? String == "json_schema")
+        #expect(format["strict"] as? Bool == true)
+        let schema = try #require(format["schema"] as? [String: Any])
+        #expect(schema["required"] as? [String] == ["text"])
+        #expect(schema["additionalProperties"] as? Bool == false)
+        let properties = try #require(schema["properties"] as? [String: [String: String]])
+        #expect(properties["text"]?["type"] == "string")
     }
 
     @Test func readsTextAfterReasoningAndAcrossOutputParts() throws {
-        let data = Data(#"{"status":"completed","service_tier":"priority","output":[{"type":"reasoning"},{"type":"message","content":[{"type":"output_text","text":" Use "},{"type":"output_text","text":"JSON.\n"}]}]}"#.utf8)
+        let data = Data(#"{"status":"completed","service_tier":"priority","output":[{"type":"reasoning"},{"type":"message","content":[{"type":"output_text","text":"{\"text\":\" Use "},{"type":"output_text","text":"JSON.\\n\"}"}]}]}"#.utf8)
         let response = try OpenAITranscriptCorrector.response(from: data, statusCode: 200)
         #expect(response.text == "Use JSON.")
         #expect(response.serviceTier == "priority")
+    }
+
+    @Test func acceptsAnExplicitEmptyEdit() throws {
+        let data = Data(#"{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"{\"text\":\"\"}"}]}]}"#.utf8)
+        #expect(try OpenAITranscriptCorrector.response(from: data, statusCode: 200).text == "")
+    }
+
+    @Test(arguments: [#"{}"#, #"{"text":null}"#, #"{"text":5}"#, "not JSON"])
+    func rejectsMissingOrMalformedEditedText(payload: String) throws {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "status": "completed",
+            "output": [["type": "message", "content": [["type": "output_text", "text": payload]]]]
+        ])
+        #expect(throws: (any Error).self) {
+            try OpenAITranscriptCorrector.response(from: data, statusCode: 200)
+        }
     }
 
     @Test(arguments: [

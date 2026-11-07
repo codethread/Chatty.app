@@ -74,7 +74,8 @@ and keep format/text variants in the existing faster suites.
 ## Stop and insert the finished text
 
 - [x] **Auto UI:** Tail flush, cleanup completion, one copy/completion, playable AAC/transcript and history reload. `testStreamingQueueStopAndPersistence`.
-- [x] **Auto UI / desktop IO:** Production activation/CGEvent Command-V, exact separate-editor text and restoration of every clipboard representation. `testExternalApplicationPasteAndClipboardRestoration`.
+- [ ] **Auto UI / desktop IO:** Production activation/CGEvent Command-V, exact separate-editor text and restoration of every clipboard representation. `testExternalApplicationPasteAndClipboardRestoration` is blocked by the rebuilt app's Accessibility authorization on 2026-11-07, including a focused retry. Earlier successful evidence is in the previous full gate below.
+- [x] **Unit + component IO:** Multi-sentence replacement/deletion, preserved older text, continued dictation after clearing, and Stop with no remaining text. [TranscriptCorrectionsTests](../Tests/ChattyTests/TranscriptCorrectionsTests.swift), [DictationControllerTests](../Tests/ChattyTests/DictationControllerTests.swift). The controller tests use loopback HTTP and playable AAC; capture/presentation are substituted.
 - [x] **Unit:** Context/pending speech/final-fragment handling preserves older corrected text. [TranscriptCorrectionsTests](../Tests/ChattyTests/TranscriptCorrectionsTests.swift), [TranscriptLayoutTests](../Tests/ChattyTests/TranscriptLayoutTests.swift).
 - [x] **Recorded desktop check:** File replay through each engine pasted expected text into TextEdit and restored the clipboard, 2026-11-07. Local record: `build/native-verification.json`.
 - [ ] **Manual:** Physical-microphone Stop into daily rich-text/web editors, focus changes, selected-text replacement and clipboard changes during recording.
@@ -94,7 +95,7 @@ and keep format/text variants in the existing faster suites.
 - [x] **Auto IO + DI:** All eight HTTP/response failures (401, 429, 500, malformed, empty, refusal, incomplete, disconnect) after a successful correction retain playable AAC/error history, present errors and never copy or complete partial text. `cleanupFailuresKeepAudioAndNeverCopyOrCompletePartialText` in [DictationControllerTests](../Tests/ChattyTests/DictationControllerTests.swift) uses the production client with real loopback HTTP/files; capture/presentation are substituted.
 - [x] **Auto IO + DI:** Preparation, stream, Stop and Cancel failures present errors and preserve available playable audio; preparation failure creates no history. `inputFailuresPresentErrorsAndPreserveAvailableAudio` in [DictationControllerTests](../Tests/ChattyTests/DictationControllerTests.swift). A failed Cancel still copies the visible text as intended, but never completes/pastes.
 - [x] **Auto IO:** Posted payload, multipart bytes and held-request cancellation/reuse. [FakeOpenAIIntegrationTests](../Tests/ChattyTests/FakeOpenAIIntegrationTests.swift).
-- [x] **Unit:** Response-shape variants reject partial/refused/empty/malformed output; authentication errors redact the key. [OpenAITranscriptCorrectorTests](../Tests/ChattyTests/OpenAITranscriptCorrectorTests.swift).
+- [x] **Unit:** Structured `text` responses accept an explicit empty edit while rejecting missing/malformed output, incomplete responses and refusals; authentication errors redact the key. [OpenAITranscriptCorrectorTests](../Tests/ChattyTests/OpenAITranscriptCorrectorTests.swift).
 - [ ] **Manual / hardware:** Input-device change/disconnection, capture shutdown, error presentation, retained audio and recovery.
 - [ ] **Manual / service IO:** Live OpenAI authentication, rate limiting, network loss, output quality and latency. Loopback establishes wire/lifecycle behavior.
 - [ ] **Automated audio gap:** Silence-only/missing-source files through the recognition service belong in component audio tests. Controller/punctuation no-speech logic has focused checks; another full desktop workflow is not required for every file variant.
@@ -111,6 +112,8 @@ and keep format/text variants in the existing faster suites.
 - [x] **Auto UI + HTTP/files:** Validation, Save/Cancel, Reset with Save/Cancel, relaunch persistence and posted instructions/dictionary. `testCleanupSettingsValidationCancelResetAndPayload`.
 - [x] **Unit:** Dictionary parsing/capitalization, invalid entries, context counts and instruction serialization. [CorrectionSettingsTests](../Tests/ChattyTests/CorrectionSettingsTests.swift).
 - [ ] **Manual / service IO:** Real cleanup preserves tone/context and applies preferred spellings on representative speech.
+- [x] **Agent-operated live service + app IO:** Through the debug app's existing Pi backend with `gpt-5.4-mini`, deleted three corrected sentences, continued without restoring them, then replaced two earlier sentences while preserving the third. Stop saved the expected transcript and delivered it to the private paste target, 2026-11-07. Local records: `build/correction-live-pi-{first,cleared,continued,final,ui}.json`. This verifies actual model edits and JSON decoding; it substitutes recognition and uses Pi's transport.
+- [ ] **Live REST gap:** The production OpenAI client attempt stalled loading its Keychain key and was cancelled after 75 seconds, before sending a request. Local records: `build/correction-live-rest-{state,ui}.json`. The strict Responses API format is covered with loopback HTTP; the direct live REST check remains pending.
 
 ## Configure and use recording shortcuts
 
@@ -127,18 +130,24 @@ and keep format/text variants in the existing faster suites.
 
 ## Evidence and maintenance
 
-Last full gate: **2026-11-07**, `./scripts/check.sh --no-build`; 60 Swift test
+Current correction-fix gate: **2026-11-07**, `./scripts/check.sh`; 66 Swift test
+functions passed in 14 suites, archive validation passed, and 9 of 10 native
+workflows passed. External paste is blocked by Accessibility permission; its
+focused retry failed for the same permission check. No tests were skipped and
+the failed gate is not treated as success. **Release is held** pending that
+authorization and the direct live REST check above.
+Results: `build/ChattyUI-20261107-215617.xcresult`,
+`build/ChattyUI-correction-paste-recheck.xcresult`.
+
+Previous successful full gate: **2026-11-07**, `./scripts/check.sh --no-build`; 60 Swift test
 functions in 14 suites, 10 native UI workflows, zero failures/skips, and signed
 archive validation. The UI runner was rebuilt with `xcodebuild build-for-testing`
 first; app sources were unchanged, so `--no-build` preserved the authorized
 app's ad-hoc Accessibility identity.
 Local result: `build/ChattyUI-20261107-205329.xcresult`.
 
-The native run took 162 seconds, compared with 203 seconds in the previous
-full gate (`build/ChattyUI-20261107-202359.xcresult`) on this Mac. The two failure
-workflows took 22 seconds instead of 60. All eight cleanup and four input-failure
-variants remain in the component suite with real files/loopback HTTP where
-applicable. These are single-run timings, not a benchmark guarantee.
+All eight cleanup and four input-failure variants remain in the component suite
+with real files/loopback HTTP where applicable.
 
 Keep checked items tied to named tests or dated records. When a flow changes,
 update its coverage, actual I/O boundaries and remaining gaps. Execution procedures

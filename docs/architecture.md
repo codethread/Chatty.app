@@ -92,6 +92,10 @@ flowchart TD
 
 - Engine selection is persisted and captured at session start. Microphone and
   file replay share recognition and audio processing.
+- Cleanup replaces the whole submitted passage: recent corrected lines plus all
+  pending speech. New speech does not consume that lookback. Both cleanup clients
+  decode a JSON `text` field; an explicit empty string is a successful deletion.
+  Stop retains its audio/history but does not copy or paste an empty result.
 - Session IDs reject stale results; overlay leases prevent background work from
   replacing the active presentation. Dictation success saves, copies and pastes; failures
   retain available audio for recovery.

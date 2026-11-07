@@ -116,7 +116,7 @@ struct TranscriptCorrections: Equatable, Sendable {
     mutating func apply(_ correction: String, to batch: CorrectionBatch) -> Bool {
         guard contains(batch) else { return false }
         correctedSource = batch.source
-        correctedText = batch.preservedText + correction
+        correctedText = (batch.preservedText + correction).trimmingCharacters(in: .whitespacesAndNewlines)
         return true
     }
 

@@ -61,7 +61,7 @@ struct CorrectionSettingsTests {
         let instructions = settings.instructions
 
         #expect(instructions.contains(settings.prompt))
-        #expect(instructions.contains("Reply only with the edited text."))
+        #expect(instructions.contains("Reply with a JSON object"))
         let start = try #require(instructions.firstIndex(of: "{"))
         let end = try #require(instructions.lastIndex(of: "}"))
         let terms = Data(instructions[start...end].utf8)

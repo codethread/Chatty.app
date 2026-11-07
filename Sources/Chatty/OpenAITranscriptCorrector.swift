@@ -106,12 +106,29 @@ final class OpenAITranscriptCorrector: TranscriptCorrecting {
         let text = content.filter { $0.type == "output_text" }.compactMap(\.text)
             .joined().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { throw OpenAICorrectionError.emptyResponse }
-        return CorrectionResponse(text: text, serviceTier: response.service_tier)
+        return CorrectionResponse(text: try TranscriptEdit.decode(Data(text.utf8)), serviceTier: response.service_tier)
     }
 
     private struct Request: Encodable {
         struct Reasoning: Encodable { let effort: String }
-        struct Text: Encodable { let verbosity: String }
+        struct Text: Encodable {
+            let verbosity: String
+            let format = Format()
+
+            struct Format: Encodable {
+                let type = "json_schema"
+                let name = "transcript_edit"
+                let strict = true
+                let schema = Schema()
+
+                struct Schema: Encodable {
+                    let type = "object"
+                    let properties = ["text": ["type": "string"]]
+                    let required = ["text"]
+                    let additionalProperties = false
+                }
+            }
+        }
         let model: String
         let instructions: String
         let input: String

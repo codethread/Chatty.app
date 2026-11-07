@@ -90,6 +90,39 @@ struct TranscriptCorrectionsTests {
         #expect(document.text == "Hello. Three new sentences.")
     }
 
+    @Test func deletingAWholePassageConsumesItsSourceAndDoesNotRestoreItWhenSpeechContinues() throws {
+        var document = TranscriptCorrections()
+        let first = "Sentence number one. Sentence number two. Sentence number three."
+        document.update(.init(committedText: first, partialText: ""))
+        document.apply(first, to: try #require(document.nextBatch(contextStart: 0)))
+        let source = first + " Okay for the tape, please delete all sentences."
+        document.update(.init(committedText: source, partialText: ""))
+        let deletion = try #require(document.nextBatch(contextStart: 0))
+        #expect(deletion.text == source)
+        let applied = document.apply("", to: deletion)
+        #expect(applied)
+        #expect(document.text.isEmpty)
+        #expect(document.pendingText.isEmpty)
+        #expect(document.nextBatch(contextStart: 0) == nil)
+
+        document.update(.init(committedText: source + " A fresh start.", partialText: "live tail"))
+        #expect(document.text == "A fresh start. live tail")
+        #expect(document.nextBatch(contextStart: 0)?.text == "A fresh start.")
+    }
+
+    @Test func deletingTheEditablePassagePreservesOlderTextWithoutATrailingSeparator() throws {
+        var document = TranscriptCorrections()
+        let first = "Older text. First editable sentence. Second editable sentence."
+        document.update(.init(committedText: first, partialText: ""))
+        document.apply(first, to: try #require(document.nextBatch(contextStart: 0)))
+        document.update(.init(committedText: first + " For the tape, delete those sentences.", partialText: ""))
+        let start = try #require(first.range(of: "First")).lowerBound.utf16Offset(in: first)
+        let deletion = try #require(document.nextBatch(contextStart: start))
+        #expect(deletion.text == "First editable sentence. Second editable sentence. For the tape, delete those sentences.")
+        document.apply("", to: deletion)
+        #expect(document.text == "Older text.")
+    }
+
     @Test func stoppingIncludesTheLastFragmentWithRecentCorrectedText() throws {
         var document = TranscriptCorrections()
         let snapshot = TranscriptSnapshot(committedText: "Um, hello.", partialText: "and the last bit")
