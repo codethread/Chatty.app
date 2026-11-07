@@ -37,11 +37,12 @@ boundaries these layers substitute. Do not multiply UI scenarios for every
 response, text, format or timing variant. Add a higher-layer case when it crosses
 a different boundary or reveals a wiring failure lower tests cannot observe.
 
-**Microphone evidence is still incomplete:** file replay bypasses the real
-input tap, and direct buffers do not prove device acquisition or shutdown. Keep
-the physical/virtual-input gaps below until that mechanism is exercised. Once
-it is, retain a representative capture-to-output workflow and keep format/text
-variants in the existing faster suites.
+**Automated microphone evidence is still incomplete:** file replay bypasses the
+real input tap, and direct buffers do not prove device acquisition or shutdown.
+The recorded human comparison below exercises microphone recognition and live
+cleanup; device shutdown/recovery and the virtual-input lane remain gaps.
+Retain a representative capture-to-output workflow when automating that lane,
+and keep format/text variants in the existing faster suites.
 
 ## Install, launch and grant access
 
@@ -67,7 +68,7 @@ variants in the existing faster suites.
 - [x] **Unit:** Recognition revisions, sentence/tail splitting, pause punctuation and final-word deduplication. [RecognitionTranscriptTests](../Tests/ChattyTests/RecognitionTranscriptTests.swift), [LocalSpeechTranscriptTests](../Tests/ChattyTests/LocalSpeechTranscriptTests.swift).
 - [ ] **Manual / hardware:** Speak through each recognizer; check first-word delay, live updates, saved audible recording and warm restart.
 - [ ] **Automated IO gap:** Virtual Core Audio fixture feed through the actual input tap. [Proposed lane](macos-io-testing.md).
-- [ ] **Manual:** Compare accuracy and perceived latency on representative speech beyond the synthetic fixture.
+- [x] **Manual / hardware + service IO:** User read the [programming/path passage](dictation-test.md) through Apple and Nemotron in Chatty 13 with live sentence cleanup, 2026-11-07. Both final transcripts were usable; Nemotron felt faster and was preferred. Both retained technical/path errors. This compares the complete experience, not isolated recognition accuracy; user supplied both final outputs in this chat.
 
 ## Stop and insert the finished text
 
