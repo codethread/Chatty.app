@@ -311,7 +311,7 @@ struct RecognitionTranscript {
     }
 }
 
-private actor MicrophoneBufferProcessor {
+actor MicrophoneBufferProcessor {
     private var file: AVAudioFile?
     private let recordingURL: URL
     private let recordingFormat: AVAudioFormat
@@ -366,6 +366,7 @@ private actor MicrophoneBufferProcessor {
     private static func converter(from input: AVAudioFormat, to output: AVAudioFormat) throws -> AVAudioConverter? {
         if input == output { return nil }
         guard let converter = AVAudioConverter(from: input, to: output) else { throw MicrophoneError.noCompatibleFormat }
+        converter.downmix = true
         return converter
     }
 
