@@ -2,7 +2,7 @@
 import Foundation
 
 @MainActor
-final class DebugSentenceCorrector: SentenceCorrecting {
+final class DebugTranscriptCorrector: TranscriptCorrecting {
     enum Backend: Int, CaseIterable {
         case openAI, fake, pi
         var title: String {
@@ -20,7 +20,7 @@ final class DebugSentenceCorrector: SentenceCorrecting {
     private(set) var lastStage = "Ready"
     private var activeRequests: [UUID: ContinuousClock.Instant] = [:]
     private let credentials: OpenAICredentials
-    private lazy var direct = OpenAISentenceCorrector(credentials: credentials) { [weak self] event in
+    private lazy var direct = OpenAITranscriptCorrector(credentials: credentials) { [weak self] event in
         await self?.record(event)
     }
 
@@ -36,22 +36,22 @@ final class DebugSentenceCorrector: SentenceCorrecting {
         onDiagnosticsChange?()
     }
 
-    func correct(_ sentence: String, settings: CorrectionSettings) async throws -> String {
+    func correct(_ text: String, settings: CorrectionSettings) async throws -> String {
         let selected = backend
-        let corrector: any SentenceCorrecting
+        let corrector: any TranscriptCorrecting
         switch selected {
-        case .openAI: return try await direct.correct(sentence, settings: settings)
-        case .fake: corrector = FakeSentenceCorrector()
-        case .pi: corrector = PiSentenceCorrector()
+        case .openAI: return try await direct.correct(text, settings: settings)
+        case .fake: corrector = FakeTranscriptCorrector()
+        case .pi: corrector = PiTranscriptCorrector()
         }
         let id = UUID()
         let start = ContinuousClock.now
         func event(_ stage: CorrectionRequestEvent.Stage) -> CorrectionRequestEvent {
-            .init(id: id, model: selected.title, sentence: sentence, elapsed: start.duration(to: .now), stage: stage)
+            .init(id: id, model: selected.title, input: text, elapsed: start.duration(to: .now), stage: stage)
         }
         record(event(.sending))
         do {
-            let result = try await corrector.correct(sentence, settings: settings)
+            let result = try await corrector.correct(text, settings: settings)
             try Task.checkCancellation()
             record(event(.completed(status: 0, requestID: nil, serviceTier: nil, text: result)))
             return result
@@ -69,7 +69,7 @@ final class DebugSentenceCorrector: SentenceCorrecting {
         case .credentials:
             activeRequests[event.id] = .now
             lastStage = "Loading API key"
-            detail = "Loading credentials · \(event.model)\nInput: \(event.sentence)"
+            detail = "Loading credentials · \(event.model)\nInput: \(event.input)"
         case .sending:
             if activeRequests[event.id] == nil { activeRequests[event.id] = .now }
             lastStage = "Waiting for \(event.model)"

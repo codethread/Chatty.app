@@ -2,7 +2,7 @@
 
 Chatty is one local Swift/AppKit application. Production runs in the menu bar;
 the debug build opens a floating control window and substitutes typed input for
-the microphone. Both use the same dictation and sentence-cleanup pipeline.
+the microphone. Both use the same dictation and transcript-cleanup pipeline.
 
 ## C1 — System context
 
@@ -15,12 +15,12 @@ flowchart LR
   target["External system: target application"]
   person -- "Speaks, configures and controls dictation" --> chatty
   chatty -- "Captures audio and recognizes speech on device" --> macos
-  chatty -- "Sends sentences for cleanup; uploads saved audio on request" --> openai
+  chatty -- "Sends recent transcript windows for cleanup; uploads saved audio on request" --> openai
   chatty -- "Copies text and pastes on completion" --> target
 ```
 
-Live speech recognition stays on the Mac. Stable sentence text, the configured
-cleanup prompt, and word dictionary go to OpenAI. Retranscribing a saved
+Live speech recognition stays on the Mac. Recent corrected text and new stable
+sentences, the configured cleanup prompt, and word dictionary go to OpenAI. Retranscribing a saved
 recording uploads its audio separately.
 
 ## C2 — Containers
@@ -59,9 +59,9 @@ flowchart TD
   entry["AppDelegate — composition, shortcuts, menus and clipboard"]
   core["DictationController — session lifecycle"]
   input["DictationInputService — microphone or debug text"]
-  cleanup["CorrectionController — sentence queue and cancellation"]
-  document["SentenceCorrections — stable sentences, live tail and corrections"]
-  provider["SentenceCorrecting — direct OpenAI, or debug fake and Pi"]
+  cleanup["CorrectionController — serial transcript batches and cancellation"]
+  document["TranscriptCorrections — corrected prefix, pending speech and live tail"]
+  provider["TranscriptCorrecting — direct OpenAI, or debug fake and Pi"]
   credentials["OpenAICredentials — asynchronous loading and in-memory cache"]
   overlay["OverlayWindowController and RecordingWaveformView"]
   storage["RecordingStore and ConfigStore"]
@@ -84,19 +84,25 @@ flowchart TD
 | Composition and UI | [main.swift](../Sources/Chatty/main.swift) injects services, wires shortcut and overlay actions, settings, clipboard and paste callbacks. [DebugPanelController](../Sources/Chatty/DebugPanelController.swift) drives the same core and exposes request diagnostics. |
 | Session lifecycle | [DictationController](../Sources/Chatty/DictationController.swift) owns preparation, listening, finishing, completion and failure. Session IDs reject stale input after cancel or restart. |
 | Input | [DictationInputService](../Sources/Chatty/DictationInputService.swift) emits transcript snapshots, levels and file size. [MicrophoneDictationService](../Sources/Chatty/MicrophoneDictationService.swift) copies one audio tap into an actor that feeds local speech recognition and AAC recording. [DebugTextInputService](../Sources/Chatty/DebugTextInputService.swift) emits matching events from typed or replayed text. |
-| Cleanup | [CorrectionController](../Sources/Chatty/CorrectionController.swift) serializes requests through `SentenceCorrecting`. [SentenceCorrections](../Sources/Chatty/SentenceCorrections.swift) splits stable text, retains unchanged corrections and rejects results for edited sentence IDs. |
-| API boundary | [OpenAISentenceCorrector](../Sources/Chatty/OpenAISentenceCorrector.swift) reuses a URLSession, validates responses and cancels individual requests. [OpenAICredentials](../Sources/Chatty/OpenAICredentials.swift) shares a background Keychain read and caches the key; callers can cancel their wait. [DebugSentenceCorrector](../Sources/Chatty/DebugSentenceCorrector.swift) selects REST, fake or Pi and reports timings. |
+| Cleanup | [CorrectionController](../Sources/Chatty/CorrectionController.swift) serializes requests through `TranscriptCorrecting`, coalescing new speech after each reply. [TranscriptCorrections](../Sources/Chatty/TranscriptCorrections.swift) tracks raw recognition separately from corrected text and replaces only the submitted window. [TranscriptLayout](../Sources/Chatty/TranscriptLayout.swift) measures context using the overlay's font and wrapping width. |
+| API boundary | [OpenAITranscriptCorrector](../Sources/Chatty/OpenAITranscriptCorrector.swift) reuses a URLSession, validates responses and cancels individual requests. [OpenAICredentials](../Sources/Chatty/OpenAICredentials.swift) shares a background Keychain read and caches the key; callers can cancel their wait. [DebugTranscriptCorrector](../Sources/Chatty/DebugTranscriptCorrector.swift) selects REST, fake or Pi and reports timings. |
 | Presentation and persistence | [OverlayWindowController](../Sources/Chatty/OverlayWindowController.swift) displays live, pending and corrected text in a growing five-line viewport. [RecordingStore](../Sources/Chatty/RecordingStore.swift) saves recordings and transcripts; [ConfigStore](../Sources/Chatty/ShortcutConfig.swift) saves shortcuts and cleanup settings. [OpenAITranscriber](../Sources/Chatty/OpenAITranscriber.swift) handles saved-audio uploads. |
 
 ## Runtime contracts
 
 - Only stable complete sentences enter cleanup during dictation; provisional
-  words remain visible. Stop finalizes the remaining tail, awaits cleanup,
+  words remain visible. Each request includes the last configured number of
+  wrapped lines (default three), expanded back to a whole sentence, and all
+  pending complete speech even when that exceeds the window. Earlier corrected
+  text remains fixed. One request runs at a time, and its reply supplies the
+  corrected context for the next batch. Replies contain plain text; the dictionary
+  is edited only by the user. Stop finalizes the remaining tail, awaits cleanup,
   saves real recordings, copies the corrected transcript, clears the overlay,
   and pastes into the original app in production.
 - Escape copies the current corrected/raw text, clears the overlay, cancels
   input and pending cleanup, and discards unsaved audio. Cancelled work cannot
-  update a replacement session or edited sentence.
+  update a replacement session or a revised source prefix. Revising already
+  corrected recognition invalidates its cleanup and resubmits the stable source.
 - Recognition, cleanup and persistence failures are visible. Available audio
   is retained on failure for recovery; an incomplete transcript is not pasted.
 - AppKit and session coordination use the main actor. The audio tap owns copies

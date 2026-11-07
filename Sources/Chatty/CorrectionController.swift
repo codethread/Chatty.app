@@ -1,27 +1,28 @@
-import Foundation
+import AppKit
 
-protocol SentenceCorrecting: Sendable {
-    func correct(_ sentence: String, settings: CorrectionSettings) async throws -> String
+protocol TranscriptCorrecting: Sendable {
+    func correct(_ text: String, settings: CorrectionSettings) async throws -> String
 }
 
 @MainActor
 final class CorrectionController {
-    private let corrector: any SentenceCorrecting
+    private let corrector: any TranscriptCorrecting
     private var worker: Task<Void, Never>?
-    private var activeSentence: UUID?
+    private var activeBatch: CorrectionBatch?
     private var failure: Error?
-    private(set) var document = SentenceCorrections()
+    private(set) var document = TranscriptCorrections()
     var settings: CorrectionSettings = .default
-    var onChange: ((SentenceCorrections) -> Void)?
+    var contextWidth: CGFloat = TranscriptLayout.defaultWidth
+    var onChange: ((TranscriptCorrections) -> Void)?
     var onError: ((Error) -> Void)?
 
-    init(corrector: any SentenceCorrecting) {
+    init(corrector: any TranscriptCorrecting) {
         self.corrector = corrector
     }
 
     func update(_ snapshot: TranscriptSnapshot, finalize: Bool = false) {
         document.update(snapshot, finalize: finalize)
-        if let activeSentence, !document.sentences.contains(where: { $0.id == activeSentence }) {
+        if let activeBatch, !document.contains(activeBatch) {
             cancel()
         }
         onChange?(document)
@@ -37,13 +38,13 @@ final class CorrectionController {
     func cancel() {
         worker?.cancel()
         worker = nil
-        activeSentence = nil
+        activeBatch = nil
     }
 
     func reset() {
         cancel()
         failure = nil
-        document = SentenceCorrections()
+        document = TranscriptCorrections()
         onChange?(document)
     }
 
@@ -51,21 +52,23 @@ final class CorrectionController {
         guard worker == nil, failure == nil else { return }
         worker = Task { [weak self] in
             while let self, !Task.isCancelled {
-                guard let sentence = self.document.sentences.first(where: { $0.correction == nil }) else {
-                    self.activeSentence = nil
+                let start = TranscriptLayout.contextStart(in: self.document.stableText,
+                                                          lines: self.settings.contextLines, width: self.contextWidth)
+                guard let batch = self.document.nextBatch(contextStart: start) else {
+                    self.activeBatch = nil
                     self.worker = nil
                     return
                 }
-                self.activeSentence = sentence.id
+                self.activeBatch = batch
                 do {
-                    let corrected = try await self.corrector.correct(sentence.source, settings: self.settings)
+                    let corrected = try await self.corrector.correct(batch.text, settings: self.settings)
                     try Task.checkCancellation()
-                    self.document.apply(corrected, to: sentence.id)
+                    self.document.apply(corrected, to: batch)
                     self.onChange?(self.document)
                 } catch {
                     if Task.isCancelled { return }
                     self.failure = error
-                    self.activeSentence = nil
+                    self.activeBatch = nil
                     self.worker = nil
                     self.onError?(error)
                     return
@@ -76,10 +79,10 @@ final class CorrectionController {
 }
 
 #if CHATTY_DEBUG_PANEL
-struct FakeSentenceCorrector: SentenceCorrecting {
-    func correct(_ sentence: String, settings: CorrectionSettings) async throws -> String {
+struct FakeTranscriptCorrector: TranscriptCorrecting {
+    func correct(_ text: String, settings: CorrectionSettings) async throws -> String {
         try await Task.sleep(for: .seconds(1))
-        return sentence.uppercased()
+        return text.uppercased()
     }
 }
 #endif

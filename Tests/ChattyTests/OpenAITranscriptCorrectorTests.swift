@@ -2,10 +2,10 @@ import Foundation
 import Testing
 @testable import Chatty
 
-struct OpenAISentenceCorrectorTests {
-    @Test func sendsSentenceAndSettingsWithoutReasoningOrResponseStorage() throws {
+struct OpenAITranscriptCorrectorTests {
+    @Test func sendsTheWholePassageAndSettingsWithoutReasoningOrResponseStorage() throws {
         let settings = CorrectionSettings(prompt: "Keep my tone.", dictionary: ["jason": "JSON"])
-        let request = try OpenAISentenceCorrector.request("um use jason.", settings: settings, apiKey: "test-key")
+        let request = try OpenAITranscriptCorrector.request("Use JSON. Um, send it to open ai.", settings: settings, apiKey: "test-key")
         let data = try #require(request.httpBody)
         let body = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
 
@@ -14,7 +14,7 @@ struct OpenAISentenceCorrectorTests {
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-key")
         #expect(body["model"] as? String == "gpt-5.4-mini")
         #expect(body["instructions"] as? String == settings.instructions)
-        #expect(body["input"] as? String == "um use jason.")
+        #expect(body["input"] as? String == "Use JSON. Um, send it to open ai.")
         #expect((body["reasoning"] as? [String: String])?["effort"] == "none")
         #expect(body["store"] as? Bool == false)
         #expect(body["service_tier"] as? String == "priority")
@@ -22,7 +22,7 @@ struct OpenAISentenceCorrectorTests {
 
     @Test func readsTextAfterReasoningAndAcrossOutputParts() throws {
         let data = Data(#"{"status":"completed","service_tier":"priority","output":[{"type":"reasoning"},{"type":"message","content":[{"type":"output_text","text":" Use "},{"type":"output_text","text":"JSON.\n"}]}]}"#.utf8)
-        let response = try OpenAISentenceCorrector.response(from: data, statusCode: 200)
+        let response = try OpenAITranscriptCorrector.response(from: data, statusCode: 200)
         #expect(response.text == "Use JSON.")
         #expect(response.serviceTier == "priority")
     }
@@ -37,14 +37,14 @@ struct OpenAISentenceCorrectorTests {
     ])
     func rejectsIncompleteRefusedEmptyOrMalformedResponses(body: String) {
         #expect(throws: (any Error).self) {
-            try OpenAISentenceCorrector.response(from: Data(body.utf8), statusCode: 200)
+            try OpenAITranscriptCorrector.response(from: Data(body.utf8), statusCode: 200)
         }
     }
 
     @Test func reportsHTTPFailureWithoutExposingAPIKey() {
         let body = Data(#"{"error":{"message":"Incorrect API key provided: sk-proj-private****key. Check your API key."}}"#.utf8)
         do {
-            _ = try OpenAISentenceCorrector.response(from: body, statusCode: 401)
+            _ = try OpenAITranscriptCorrector.response(from: body, statusCode: 401)
             Issue.record("Expected authentication error")
         } catch {
             #expect(error.localizedDescription.contains("401"))

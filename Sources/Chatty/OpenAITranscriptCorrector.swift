@@ -11,12 +11,12 @@ struct CorrectionRequestEvent: Sendable {
 
     let id: UUID
     let model: String
-    let sentence: String
+    let input: String
     let elapsed: Duration
     let stage: Stage
 }
 
-final class OpenAISentenceCorrector: SentenceCorrecting {
+final class OpenAITranscriptCorrector: TranscriptCorrecting {
     static let model = "gpt-5.4-mini"
     private let credentials: OpenAICredentials
     private let session: URLSession
@@ -30,12 +30,12 @@ final class OpenAISentenceCorrector: SentenceCorrecting {
 
     deinit { session.invalidateAndCancel() }
 
-    func correct(_ sentence: String, settings: CorrectionSettings) async throws -> String {
+    func correct(_ text: String, settings: CorrectionSettings) async throws -> String {
         let id = UUID()
         let started = ContinuousClock.now
         var requestID: String?
         func report(_ stage: CorrectionRequestEvent.Stage) async {
-            await onEvent?(CorrectionRequestEvent(id: id, model: Self.model, sentence: sentence,
+            await onEvent?(CorrectionRequestEvent(id: id, model: Self.model, input: text,
                                                  elapsed: started.duration(to: .now), stage: stage))
         }
         do {
@@ -43,10 +43,10 @@ final class OpenAISentenceCorrector: SentenceCorrecting {
             await report(.credentials)
             let key = try await credentials.load()
             try Task.checkCancellation()
-            let request = try Self.request(sentence, settings: settings, apiKey: key)
+            let request = try Self.request(text, settings: settings, apiKey: key)
             await report(.sending)
             // URLSession's async API cancels this request with its calling Task.
-            // The shared session remains available for subsequent sentences.
+            // The shared session remains available for subsequent batches.
             let (data, response) = try await session.data(for: request)
             try Task.checkCancellation()
             guard let http = response as? HTTPURLResponse else { throw OpenAICorrectionError.invalidResponse }
@@ -65,15 +65,15 @@ final class OpenAISentenceCorrector: SentenceCorrecting {
         }
     }
 
-    static func request(_ sentence: String, settings: CorrectionSettings, apiKey: String) throws -> URLRequest {
+    static func request(_ text: String, settings: CorrectionSettings, apiKey: String) throws -> URLRequest {
         var request = URLRequest(url: URL(string: "https://api.openai.com/v1/responses")!)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(Request(
-            model: model, instructions: settings.instructions, input: sentence,
+            model: model, instructions: settings.instructions, input: text,
             reasoning: .init(effort: "none"), text: .init(verbosity: "low"),
-            max_output_tokens: 2048, store: false, service_tier: "priority"
+            store: false, service_tier: "priority"
         ))
         return request
     }
@@ -96,7 +96,7 @@ final class OpenAISentenceCorrector: SentenceCorrecting {
         }
         let content = response.output.filter { $0.type == "message" }.flatMap { $0.content ?? [] }
         if let refusal = content.first(where: { $0.type == "refusal" }) {
-            throw OpenAICorrectionError.refused(refusal.refusal ?? "The model declined to edit this sentence.")
+            throw OpenAICorrectionError.refused(refusal.refusal ?? "The model declined to edit this transcript.")
         }
         let text = content.filter { $0.type == "output_text" }.compactMap(\.text)
             .joined().trimmingCharacters(in: .whitespacesAndNewlines)
@@ -112,7 +112,6 @@ final class OpenAISentenceCorrector: SentenceCorrecting {
         let input: String
         let reasoning: Reasoning
         let text: Text
-        let max_output_tokens: Int
         let store: Bool
         let service_tier: String
     }
@@ -147,9 +146,9 @@ private enum OpenAICorrectionError: LocalizedError {
         switch self {
         case .invalidResponse: "OpenAI returned an invalid HTTP response."
         case .api(let status, let details): "OpenAI HTTP \(status): \(details)"
-        case .incomplete(let reason): "OpenAI sentence cleanup was incomplete (\(reason))."
-        case .refused(let reason): "OpenAI sentence cleanup refused: \(reason)"
-        case .emptyResponse: "OpenAI sentence cleanup returned no text."
+        case .incomplete(let reason): "OpenAI transcript cleanup was incomplete (\(reason))."
+        case .refused(let reason): "OpenAI transcript cleanup refused: \(reason)"
+        case .emptyResponse: "OpenAI transcript cleanup returned no text."
         }
     }
 }

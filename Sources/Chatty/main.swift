@@ -16,13 +16,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let openAICredentials = OpenAICredentials()
     #if CHATTY_DEBUG_PANEL
     private let input = DebugTextInputService()
-    private lazy var debugCorrector = DebugSentenceCorrector(credentials: openAICredentials)
+    private lazy var debugCorrector = DebugTranscriptCorrector(credentials: openAICredentials)
     private lazy var corrections = CorrectionController(corrector: debugCorrector)
     private lazy var debugPanel = DebugPanelController(input: input, controller: dictation, corrector: debugCorrector,
                                                       onSetAPIKey: { [weak self] in self?.setAPIKey() })
     #else
     private let input = MicrophoneDictationService()
-    private lazy var corrections = CorrectionController(corrector: OpenAISentenceCorrector(credentials: openAICredentials))
+    private lazy var corrections = CorrectionController(corrector: OpenAITranscriptCorrector(credentials: openAICredentials))
     #endif
     private lazy var dictation = DictationController(input: input, corrections: corrections, overlay: overlay, recordings: store)
     private let errorWindow = ErrorWindowController()

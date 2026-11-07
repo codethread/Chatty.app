@@ -7,7 +7,7 @@ Menu-bar-only macOS dictation helper.
 - Runs as a menu bar app, not a normal Dock app.
 - Double-tap **left Shift** to start recording from the default microphone.
 - See live on-device transcription in a scrolling bottom-center overlay.
-- Complete sentences are tidied directly through OpenAI's Responses API using `gpt-5.4-mini` with reasoning disabled; yellow marks pending cleanup and green marks corrected text.
+- Complete sentences are tidied with recent transcript context through OpenAI's Responses API using `gpt-5.4-mini` with reasoning disabled; yellow marks pending cleanup and green marks corrected text.
 - The overlay grows from one line to five wrapped lines, then scrolls older text upward. Its waveform follows your microphone level.
 - Double-tap **left Shift** again to finalize, save the recording and transcript, copy and paste the text into the original app, and clear the overlay.
 - Press **Escape** while recording to copy the currently visible text and clear the overlay, canceling pending cleanup and discarding the unsaved audio.
@@ -86,7 +86,7 @@ Choose a **Correction backend** in the debug panel:
 
 - **OpenAI REST** (default) runs the same direct `gpt-5.4-mini` request as production,
   using your saved OpenAI API key. **Set API key…** replaces it in Keychain.
-- **Fake** waits one second, then uppercases each complete sentence without network access.
+- **Fake** waits one second, then uppercases each submitted passage without network access.
 - **Pi** uses the same mini model without reasoning for timing comparisons.
 
 The request log shows credential loading, sending, elapsed time, HTTP status,
@@ -94,12 +94,12 @@ actual service tier, request ID, input, output, errors, and cancellation. The ac
 running while a request is pending. Credentials are never logged. A macOS
 Keychain trust prompt can delay credential loading; approve access for the debug
 app if prompted. Reads happen off the UI thread and the key is cached in memory
-for subsequent sentences. Cancelling also interrupts the wait for credentials.
+for subsequent requests. Cancelling also interrupts the wait for credentials.
 
-Corrections run one
-sentence at a time so new speech keeps streaming while earlier text is tidied.
-Edits invalidate affected corrections, and Stop also submits the last unfinished
-fragment before completing the session.
+Corrections run one request at a time while new speech keeps streaming. After
+each reply, the next request combines recent corrected text with all newly
+completed speech. Edits invalidate cleanup of revised source text, and Stop also
+submits the last unfinished fragment before completing the session.
 
 The panel uses AppKit's floating-window accessibility subrole so tiling window
 managers such as AeroSpace can recognize it as a floating utility window.
@@ -128,20 +128,27 @@ If the shortcut does not work, enable Chatty under **System Settings → Privacy
 Normal builds call `POST https://api.openai.com/v1/responses` directly using
 `gpt-5.4-mini`, `reasoning.effort: none`, low verbosity, `store: false`, and
 Fast processing (`service_tier: priority`, which has premium per-token pricing).
-Each sentence gets the configured instructions and dictionary. A shared
+Each passage gets the configured instructions and dictionary. A shared
 URLSession reuses connections; Keychain is read off the UI thread once and the
 credential is cached in memory. Saving a new API key updates the cache.
 Pi is only a comparison option in the debug panel.
 
-Open **Sentence Cleanup…** to edit the cleanup instructions and word dictionary.
-Enter one mapping per line, for example:
+Open **Sentence Cleanup…** to edit the cleanup instructions, **Context lines**,
+and word dictionary. Context defaults to the last **three wrapped transcript
+lines**, using the overlay's font and width and expanding back to a complete
+sentence. All new completed speech is included, even if it exceeds that window.
+Older corrected text stays fixed. Replies can revise the recent passage using
+spoken retries and spelled-out clarifications; no correction metadata is learned
+or saved automatically.
+
+Enter one dictionary mapping per line, for example:
 
 ```text
 jason = JSON
 open ai = OpenAI
 ```
 
-Mappings are passed to the model with each sentence, matching recognized words
+Mappings are passed to the model with each passage, matching recognized words
 or phrases case-insensitively while retaining the preferred capitalization.
 Settings persist in `~/Library/Application Support/Chatty/config.json`; saved
 changes apply to subsequent correction requests. Reset to Defaults changes the
@@ -152,7 +159,7 @@ Stopping flushes the remaining text and waits for corrections before saving and
 pasting. A failed cleanup is shown as an error and prevents an incomplete paste;
 the original audio remains saved for recovery.
 Cancel cancels the active HTTP request and rejects late output; aborting an old
-correction does not cancel a replacement sentence or a new recording.
+correction does not cancel a replacement batch or a new recording.
 
 ## Comparing recording quality
 

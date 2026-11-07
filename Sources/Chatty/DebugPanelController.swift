@@ -5,7 +5,7 @@ import AppKit
 final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextViewDelegate {
     private let input: DebugTextInputService
     private let controller: DictationController
-    private let corrector: DebugSentenceCorrector
+    private let corrector: DebugTranscriptCorrector
     private let onSetAPIKey: () -> Void
     private let backend = NSPopUpButton()
     private let requestStatus = NSTextField(labelWithString: "Ready")
@@ -18,7 +18,7 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
     private let cancelButton = NSButton(title: "Cancel", target: nil, action: nil)
     private let streamButton = NSButton(title: "Stream text", target: nil, action: nil)
 
-    init(input: DebugTextInputService, controller: DictationController, corrector: DebugSentenceCorrector,
+    init(input: DebugTextInputService, controller: DictationController, corrector: DebugTranscriptCorrector,
          onSetAPIKey: @escaping () -> Void) {
         self.input = input
         self.controller = controller
@@ -63,7 +63,7 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
         scrollView.borderType = .bezelBorder
         scrollView.documentView = textView
 
-        backend.addItems(withTitles: DebugSentenceCorrector.Backend.allCases.map(\.title))
+        backend.addItems(withTitles: DebugTranscriptCorrector.Backend.allCases.map(\.title))
         backend.target = self
         backend.action = #selector(changeBackend)
         backend.setAccessibilityLabel("Correction backend")
@@ -173,9 +173,10 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
         stopButton.isEnabled = controller.isActive
         cancelButton.isEnabled = controller.isActive || !controller.transcript.text.isEmpty
         let count = controller.transcript.text.split(whereSeparator: \.isWhitespace).count
-        let sentences = controller.correctionState.sentences
-        let pending = sentences.filter { $0.correction == nil }.count
-        status.stringValue = "\(controller.isActive ? "Dictating" : "Ready") · \(count) words · \(pending) pending · \(sentences.count - pending) corrected"
+        let document = controller.correctionState
+        let pending = document.pendingText.split(whereSeparator: \.isWhitespace).count
+        let corrected = document.correctedText.split(whereSeparator: \.isWhitespace).count
+        status.stringValue = "\(controller.isActive ? "Dictating" : "Ready") · \(count) words · \(pending) pending words · \(corrected) corrected words"
     }
 
     private func updateDiagnostics() {
@@ -185,7 +186,7 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
     }
 
     @objc private func changeBackend() {
-        corrector.backend = DebugSentenceCorrector.Backend(rawValue: backend.indexOfSelectedItem)!
+        corrector.backend = DebugTranscriptCorrector.Backend(rawValue: backend.indexOfSelectedItem)!
     }
 
     @objc private func setAPIKey() { onSetAPIKey() }

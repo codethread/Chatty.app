@@ -6,6 +6,8 @@ final class OverlayWindowController: NSWindowController {
     private var recordingStartedAt: Date?
     private var durationTimer: Timer?
 
+    var transcriptWidth: CGFloat { window!.frame.width - 48 }
+
     var onCancel: (() -> Void)? {
         get { content.onCancel }
         set { content.onCancel = newValue }
@@ -45,7 +47,7 @@ final class OverlayWindowController: NSWindowController {
 
     func showPreparing() {
         stopDurationTimer()
-        content.setCorrections(SentenceCorrections())
+        content.setCorrections(TranscriptCorrections())
         content.setStatus("Preparing dictation…", color: .systemBlue, canCancel: true)
         showCentered()
     }
@@ -66,7 +68,7 @@ final class OverlayWindowController: NSWindowController {
         showCentered()
     }
 
-    func updateCorrections(_ document: SentenceCorrections) {
+    func updateCorrections(_ document: TranscriptCorrections) {
         content.setCorrections(document)
         if let window, window.isVisible, let screen = window.screen ?? NSScreen.main {
             layoutOverlay(on: screen)
@@ -101,7 +103,7 @@ final class OverlayWindowController: NSWindowController {
 
     override func close() {
         stopDurationTimer()
-        content.setCorrections(SentenceCorrections())
+        content.setCorrections(TranscriptCorrections())
         super.close()
     }
 
@@ -148,7 +150,7 @@ private final class DictationOverlayView: NSVisualEffectView {
     private let hint = NSTextField(labelWithString: "New words appear below · Esc to copy and close")
     private let cancel = NSButton(title: "×", target: nil, action: nil)
     private let retry = NSButton(title: "↻", target: nil, action: nil)
-    private let transcriptFont = NSFont.systemFont(ofSize: 15)
+    private let transcriptFont = TranscriptLayout.font
     private var transcriptLineHeight: CGFloat {
         ceil(transcript.layoutManager!.defaultLineHeight(for: transcriptFont)) + 5
     }
@@ -257,7 +259,7 @@ private final class DictationOverlayView: NSVisualEffectView {
         retry.isHidden = !canRetry
     }
 
-    func setCorrections(_ document: SentenceCorrections) {
+    func setCorrections(_ document: TranscriptCorrections) {
         let paragraph = NSMutableParagraphStyle()
         paragraph.minimumLineHeight = transcriptLineHeight
         paragraph.maximumLineHeight = transcriptLineHeight
@@ -268,12 +270,11 @@ private final class DictationOverlayView: NSVisualEffectView {
             .paragraphStyle: paragraph
         ]
         let text = NSMutableAttributedString()
-        for sentence in document.sentences {
+        for (section, color) in [(document.correctedText, NSColor.systemGreen), (document.pendingText, NSColor.systemYellow)] where !section.isEmpty {
             if text.length > 0 { text.append(NSAttributedString(string: " ", attributes: attrs)) }
-            var sentenceAttrs = attrs
-            let color: NSColor = sentence.correction == nil ? .systemYellow : .systemGreen
-            sentenceAttrs[.backgroundColor] = color.withAlphaComponent(0.25)
-            text.append(NSAttributedString(string: sentence.text, attributes: sentenceAttrs))
+            var sectionAttrs = attrs
+            sectionAttrs[.backgroundColor] = color.withAlphaComponent(0.25)
+            text.append(NSAttributedString(string: section, attributes: sectionAttrs))
         }
         if !document.tail.isEmpty {
             if text.length > 0 { text.append(NSAttributedString(string: " ", attributes: attrs)) }

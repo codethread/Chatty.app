@@ -4,13 +4,14 @@ import AppKit
 final class CorrectionSettingsWindowController: NSWindowController {
     private let promptView = NSTextView()
     private let dictionaryView = NSTextView()
+    private let contextLinesField = NSTextField(string: "3")
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
     private let onSave: (CorrectionSettings) throws -> Void
 
     init(onSave: @escaping (CorrectionSettings) throws -> Void) {
         self.onSave = onSave
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 640, height: 540),
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 620),
             styleMask: [.titled, .closable, .resizable, .utilityWindow],
             backing: .buffered,
             defer: false
@@ -20,16 +21,25 @@ final class CorrectionSettingsWindowController: NSWindowController {
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
         panel.setAccessibilitySubrole(.floatingWindow)
-        panel.contentMinSize = NSSize(width: 560, height: 500)
+        panel.contentMinSize = NSSize(width: 560, height: 580)
         super.init(window: panel)
 
         let title = NSTextField(labelWithString: "Sentence cleanup")
         title.font = .systemFont(ofSize: 21, weight: .semibold)
         let description = NSTextField(wrappingLabelWithString:
-            "Customize how each sentence is edited. Saved settings apply to subsequent correction requests."
+            "Customize how dictated text is edited. Saved settings apply to subsequent correction requests."
         )
         description.font = .systemFont(ofSize: 12)
         description.textColor = .secondaryLabelColor
+        contextLinesField.setAccessibilityLabel("Context lines")
+        contextLinesField.widthAnchor.constraint(equalToConstant: 60).isActive = true
+        let contextRow = NSStackView(views: [label("Context lines"), contextLinesField])
+        contextRow.spacing = 10
+        let contextHelp = NSTextField(wrappingLabelWithString:
+            "Send the last few wrapped transcript lines, expanded to whole sentences. All new completed speech is included; older corrected text stays fixed."
+        )
+        contextHelp.font = .systemFont(ofSize: 12)
+        contextHelp.textColor = .secondaryLabelColor
         let promptLabel = label("Cleanup instructions")
         let dictionaryLabel = label("Word dictionary")
         let help = NSTextField(wrappingLabelWithString: "One mapping per line, for example jason = JSON. Matching ignores capitalization; preferred spellings keep their case.")
@@ -52,7 +62,7 @@ final class CorrectionSettingsWindowController: NSWindowController {
         errorLabel.setAccessibilityLabel("Settings validation")
 
         let content = NSStackView(views: [
-            title, description, promptLabel, promptScroll, dictionaryLabel,
+            title, description, contextRow, contextHelp, promptLabel, promptScroll, dictionaryLabel,
             help, dictionaryScroll, errorLabel, buttons
         ])
         content.orientation = .vertical
@@ -80,6 +90,7 @@ final class CorrectionSettingsWindowController: NSWindowController {
     func show(settings: CorrectionSettings) {
         promptView.string = settings.prompt
         dictionaryView.string = settings.dictionaryText
+        contextLinesField.stringValue = String(settings.contextLines)
         errorLabel.stringValue = ""
         showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -110,7 +121,8 @@ final class CorrectionSettingsWindowController: NSWindowController {
 
     @objc private func saveClicked() {
         do {
-            let settings = try CorrectionSettings.parse(prompt: promptView.string, dictionaryText: dictionaryView.string)
+            let settings = try CorrectionSettings.parse(prompt: promptView.string, dictionaryText: dictionaryView.string,
+                                                        contextLinesText: contextLinesField.stringValue)
             try onSave(settings)
             close()
         } catch {
@@ -123,6 +135,7 @@ final class CorrectionSettingsWindowController: NSWindowController {
     @objc private func resetClicked() {
         promptView.string = CorrectionSettings.defaultPrompt
         dictionaryView.string = ""
+        contextLinesField.stringValue = String(CorrectionSettings.default.contextLines)
         errorLabel.stringValue = ""
     }
 }

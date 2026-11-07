@@ -17,7 +17,7 @@ final class DictationController {
 
     private(set) var phase: Phase = .idle
     private(set) var transcript = TranscriptSnapshot.empty
-    var correctionState: SentenceCorrections { corrections.document }
+    var correctionState: TranscriptCorrections { corrections.document }
     var onStateChange: (() -> Void)?
     var onActivityChange: ((Bool) -> Void)?
     var onCopy: ((String) -> Void)?
@@ -37,8 +37,10 @@ final class DictationController {
         self.overlay = overlay
         self.recordings = recordings
         corrections.onChange = { [weak self] document in
-            self?.overlay.updateCorrections(document)
-            self?.onStateChange?()
+            guard let self else { return }
+            self.overlay.updateCorrections(document)
+            self.corrections.contextWidth = self.overlay.transcriptWidth
+            self.onStateChange?()
         }
         corrections.onError = { [weak self] error in
             guard let self, let id = self.sessionID else { return }
@@ -102,7 +104,7 @@ final class DictationController {
             guard sessionID == id else { return }
             guard !transcript.text.isEmpty else { throw DictationError.noSpeech }
             corrections.update(transcript, finalize: true)
-            overlay.showProcessing(canCancel: true, message: "Tidying sentences…")
+            overlay.showProcessing(canCancel: true, message: "Tidying transcript…")
             try await corrections.finish()
             guard sessionID == id else { return }
             let correctedText = corrections.document.text
