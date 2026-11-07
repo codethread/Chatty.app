@@ -1,5 +1,10 @@
 # Debug verification
 
+Acceptance is based on complete user workflows in the running application.
+Targeted Swift tests support specific logic; their count does not establish
+integration correctness. The scenario runner launches a real signed app and
+observes its controllers, native views, files and HTTP traffic together.
+
 Run `./scripts/check.sh` from a macOS 26 Apple Silicon checkout. It acquires
 `/tmp/agent-cpu.lock` for Swift builds, tests, release packaging and the AppKit
 scenario suite. It builds both production and `CHATTY_DEBUG_PANEL`, signs and
@@ -70,6 +75,22 @@ same scenarios and resets its sandbox. `--launch` instead packages the existing
 Swift debug binary and owns a fresh process and workspace. Build with
 `swift build -Xswiftc -DCHATTY_DEBUG_PANEL` before using `--launch` directly.
 
+## External application paste check
+
+With an unlocked desktop, create an empty TextEdit document and focus its editor.
+Run `python3 scripts/chatty-debug.py system-paste --target-bundle com.apple.TextEdit`
+and check that
+`state.systemPasteTarget` is `com.apple.TextEdit`. Start injected dictation or
+replay the speech fixture, then Stop. Inspect the actual TextEdit document through
+the native UI; the text must match the completed transcript exactly. This path
+runs production app activation and CGEvent Command-V, rather than the private
+NSTextView paste shortcut. Finish with `restore-clipboard`; the snapshot reports
+`clipboardRestored: true` only after every saved representation compares equal.
+Clipboard data stays in memory and is never returned by the control API.
+The mode is one-shot and must be explicitly rearmed for another test. If someone
+copies new content during the check, restoration keeps those newer contents and
+reports that the clipboard changed.
+
 ## Evidence and limits
 
 The 27 AppKit-process scenarios and focused Swift tests cover the following
@@ -90,12 +111,20 @@ boundaries. The JSON report records each scenario's evidence or failure state.
 | Recognition integration | Clock-paced speech fixture through that processor, model, pause punctuation, HTTP cleanup, recording history, copy and AppKit paste. Cancel/restart, early Stop, silence and missing file. |
 | Build/distribution | Ordinary Swift build, debug test build, production release archive, code signing/verification and a separately signed runnable harness bundle. |
 
-On 2026-11-07 all 60 Swift tests in 14 suites and the 27 process scenarios passed. Own-view renders were inspected.
-Native desktop inspection was blocked by the locked Mac. Carbon event dispatch
-and real NSTextView paste were tested internally; delivery of physical shortcuts
-across applications, target-app activation and the production CGEvent paste need
-an unlocked desktop. Actual microphone hardware and TCC prompts require a human.
-The API fake verifies wire/lifecycle behavior; real OpenAI output, authentication,
-latency and Keychain trust dialogs remain external checks for the later token.
-Apple recognition accuracy, optional Pi service output and noisy-environment
-accuracy are not established by the deterministic local-model fixture.
+On 2026-11-07 the 27 process scenarios passed. Targeted Swift logic checks also
+passed. After unlocking, native UI operation verified panel Start/Inject/Stop,
+settings validation/Cancel and the private paste destination. The speech fixture
+then traversed capture conversion, local recognition, HTTP cleanup, AAC/history
+persistence and the production activation/CGEvent paste path into a real TextEdit
+document. Its exact visible text matched the completed transcript; restoring the
+clipboard compared every representation successfully. Native evidence is recorded
+in `build/native-verification.json` and `build/Chatty-native-paste.rtf`.
+
+The custom shortcut did not toggle Chatty through the automated keypress API.
+Registration and direct Carbon dispatch pass, but those checks are not accepted
+as proof of actual cross-app keystrokes. A physical-key confirmation is pending.
+Actual microphone hardware and TCC prompts require a human. The API fake verifies
+wire/lifecycle behavior; real OpenAI output, authentication, latency and Keychain
+trust dialogs remain external checks for the later token. Apple recognition
+accuracy, optional Pi service output and noisy-environment accuracy are not
+established by the deterministic local-model fixture.

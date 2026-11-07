@@ -54,6 +54,9 @@ final class DebugHarness {
         let globalShortcuts: Bool
         let history: [String: RecordingTranscriptionController.State]
         let platform: [String: String]
+        let systemPasteTarget: String?
+        let clipboardNeedsRestore: Bool
+        let clipboardRestored: Bool
     }
     struct Condition: Codable, Sendable {
         var phase: String?
@@ -71,6 +74,7 @@ final class DebugHarness {
             case transcribeRecording, cancelTranscription, retryTranscription, copyRecording, clearRecordingError
             case ui, vocabulary
             case shortcutKey, resetShortcut, nativeHotkey
+            case systemPaste, restoreClipboard
         }
         let action: Action
         var committed: String?
@@ -118,6 +122,7 @@ final class DebugHarness {
     private(set) var completed: [String] = []
     let pasteboard = NSPasteboard.withUniqueName()
     let pasteTarget = DebugPasteTarget()
+    let systemPaste = DebugSystemPaste()
     var onSettings: ((AppConfig) -> Void)?
     var onReset: (() -> Void)?
     var onGlobalShortcuts: ((Bool) -> Void)?
@@ -182,7 +187,9 @@ final class DebugHarness {
                         requestCount: await fake.receipts.count, settings: corrections.settings, directory: store.appDirectory,
                         globalShortcuts: globalShortcuts,
                         history: Dictionary(uniqueKeysWithValues: history.states.map { ($0.key.uuidString, $0.value) }),
-                        platform: platformState?() ?? [:])
+                        platform: platformState?() ?? [:],
+                        systemPasteTarget: systemPaste.targetID, clipboardNeedsRestore: systemPaste.needsRestore,
+                        clipboardRestored: systemPaste.restoredClipboard)
     }
 
     struct Acknowledgment: Encodable { let accepted: String; let artifact: URL? }
@@ -232,6 +239,7 @@ final class DebugHarness {
                 try DebugUI.interact(window, control: control, value: command.value, click: command.click ?? false)
             }
         case .reset:
+            try systemPaste.restore()
             await controller.cancel()
             history.cancelAll()
             await fake.reset()
@@ -252,6 +260,10 @@ final class DebugHarness {
         case .globals:
             globalShortcuts = command.enabled ?? false
             onGlobalShortcuts?(globalShortcuts)
+        case .systemPaste:
+            guard !controller.isActive else { throw DebugInputError.injected("Arm system paste before starting dictation") }
+            try systemPaste.arm(bundleID: command.value)
+        case .restoreClipboard: try systemPaste.restore()
         case .resetShortcut: resetShortcut?()
         case .shortcutKey:
             guard let code = command.keyCode, let shortcutKey else { throw DebugInputError.injected("Supply keyCode") }
@@ -307,6 +319,7 @@ final class DebugHarness {
             }
             artifact = url
         case .quit:
+            try systemPaste.restore()
             await controller.cancel()
             history.cancelAll()
         }

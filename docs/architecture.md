@@ -54,7 +54,12 @@ Production files live under `~/Library/Application Support/Chatty/`:
 receive their root at composition time. Debug defaults to the separate
 `Chatty Debug/` sibling; `run-debug.sh` uses this checkout's `build/debug-data/`.
 Its private clipboard, AppKit paste destination and authenticated loopback control
-server never replace production storage or clipboard. Cleanup credentials come from `OPENAI_API_KEY`
+server isolate the default debug workflow. An explicit one-shot `systemPaste`
+command captures the focused external app and uses the production activation and
+CGEvent paste path. It preserves every clipboard representation in memory;
+`restoreClipboard` checks and restores them after inspecting the destination.
+Reset and Quit also restore a staged test clipboard. Production storage remains
+separate. Cleanup credentials come from `OPENAI_API_KEY`
 when supplied, otherwise Keychain; they stay out of config and diagnostics.
 
 ## C3 — App components

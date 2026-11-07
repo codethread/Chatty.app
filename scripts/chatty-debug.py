@@ -46,8 +46,10 @@ def parser():
     commands = p.add_subparsers(dest="action", required=True)
     commands.add_parser("state", help="Full controller, overlay, clipboard, paste and storage snapshot")
     commands.add_parser("schema", help="Show the command and wait-condition schemas")
-    for name in ["start", "stop", "cancel", "toggle", "release", "release-preparation", "input-failure", "paste-target", "quit"]:
+    for name in ["start", "stop", "cancel", "toggle", "release", "release-preparation", "input-failure", "paste-target", "restore-clipboard", "quit"]:
         commands.add_parser(name)
+    system_paste = commands.add_parser("system-paste", help="Arm a one-shot production keyboard paste into an external test application")
+    system_paste.add_argument("--target-bundle", help="Running test app bundle ID; defaults to the frontmost app")
     inject = commands.add_parser("inject", help="Inject a complete recognition snapshot through the real input stream")
     inject.add_argument("--committed", default="")
     inject.add_argument("--partial", default="")
@@ -103,7 +105,7 @@ def run(args):
     if args.action == "schema":
         return {
             "command": {
-                "action": "start|stop|cancel|toggle|inject|level|inputFailure|inputFaults|releasePreparation|fake|releaseRequests|settings|vocabulary|reset|showPasteTarget|clearPasteTarget|globals|replayAudio|render|ui|transcribeRecording|cancelTranscription|retryTranscription|copyRecording|clearRecordingError|shortcutKey|resetShortcut|nativeHotkey|quit",
+                "action": "start|stop|cancel|toggle|inject|level|inputFailure|inputFaults|releasePreparation|fake|releaseRequests|settings|vocabulary|reset|showPasteTarget|clearPasteTarget|globals|replayAudio|render|ui|transcribeRecording|cancelTranscription|retryTranscription|copyRecording|clearRecordingError|shortcutKey|resetShortcut|nativeHotkey|systemPaste|restoreClipboard|quit",
                 "inject": {"committed": "text", "partial": "text"},
                 "level": {"level": "0...1", "bytes": "nonnegative integer"},
                 "inputFaults": {"holdPreparation": False, "failStart": False, "failStop": False, "failCancel": False},
@@ -126,6 +128,7 @@ def run(args):
     client = HarnessClient(args.control)
     if args.action == "state": return client.state()
     if args.action == "command": return client.request("/command", json.loads(args.json))
+    if args.action == "system-paste": return client.command("systemPaste", value=args.target_bundle)
     if args.action == "inject": return client.command("inject", committed=args.committed, partial=args.partial)
     if args.action == "meter": return client.command("level", level=args.level, bytes=args.bytes)
     if args.action == "fake": return client.command("fake", behavior=args.behavior, audioText=args.audio_text)
@@ -147,7 +150,7 @@ def run(args):
         return client.request("/requests/" + urllib.parse.quote(args.id) if args.id else f"/requests?limit={args.limit}&offset={args.offset}")
     if args.action == "settings": return client.command("settings", prompt=args.prompt, dictionary=args.dictionary, contextLines=args.context_lines)
     if args.action == "reset": return client.command("reset", clearData=args.clear_data)
-    action = {"release": "releaseRequests", "release-preparation": "releasePreparation", "input-failure": "inputFailure", "paste-target": "showPasteTarget"}.get(args.action, args.action)
+    action = {"release": "releaseRequests", "release-preparation": "releasePreparation", "input-failure": "inputFailure", "paste-target": "showPasteTarget", "system-paste": "systemPaste", "restore-clipboard": "restoreClipboard"}.get(args.action, args.action)
     return client.command(action)
 
 

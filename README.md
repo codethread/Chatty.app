@@ -97,7 +97,10 @@ Choose a **Speech recognition source**:
 
 Microphone modes request microphone permission on first use and save recordings
 on Stop. Cancel copies visible text and discards unsaved audio. Both clear the
-overlay. The demo uses a private clipboard and a real AppKit test paste window.
+overlay. The demo uses a private clipboard and a real AppKit test paste window by default.
+The explicit `system-paste --target-bundle com.apple.TextEdit` CLI command arms
+one production-path paste into an external test app. `restore-clipboard` restores
+and verifies all clipboard representations afterward.
 Debug builds skip startup microphone and Accessibility prompts. Global shortcuts
 start disabled; enable them explicitly with the debug CLI when testing them.
 

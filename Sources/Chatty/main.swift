@@ -542,8 +542,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func pasteTranscript() {
         #if CHATTY_DEBUG_PANEL
-        harness!.pasteTarget.paste(from: harness!.pasteboard)
-        #else
+        guard harness!.systemPaste.target != nil else {
+            harness!.pasteTarget.paste(from: harness!.pasteboard)
+            return
+        }
+        do { targetPasteApplication = try harness!.systemPaste.stage(harness!.pasteboard.string(forType: .string)!) }
+        catch { showError(error.localizedDescription); return }
+        #endif
         let targetApplication = targetPasteApplication
         targetPasteApplication = nil
         targetApplication?.activate(options: [])
@@ -551,7 +556,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             self.pasteClipboardContents()
         }
-        #endif
     }
 
     private func pasteClipboardContents() {
