@@ -9,6 +9,8 @@ final class DebugSystemPaste {
     private var backup: [NSPasteboardItem]?
     private var stagedChangeCount: Int?
     private(set) var restoredClipboard = false
+    private(set) var pendingDispatch = false
+    private(set) var dispatchCount = 0
     var targetID: String? { target?.bundleIdentifier }
     var needsRestore: Bool { backup != nil }
 
@@ -38,6 +40,7 @@ final class DebugSystemPaste {
             return copy
         }
         backup = saved
+        pendingDispatch = true
         restoredClipboard = false
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
@@ -45,7 +48,13 @@ final class DebugSystemPaste {
         return app
     }
 
+    func finishDispatch(posted: Bool) {
+        pendingDispatch = false
+        if posted { dispatchCount += 1 }
+    }
+
     func restore() throws {
+        guard !pendingDispatch else { throw DebugInputError.injected("Wait for the system paste dispatch before restoring the clipboard") }
         target = nil
         guard let saved = backup else { return }
         let pasteboard = NSPasteboard.general

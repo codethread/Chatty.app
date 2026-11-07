@@ -59,6 +59,8 @@ server isolate the default debug workflow. An explicit one-shot `systemPaste`
 command captures the focused external app and uses the production activation and
 CGEvent paste path. It preserves every clipboard representation in memory;
 `restoreClipboard` checks and restores them after inspecting the destination.
+The harness exposes dispatch completion and rejects restoration while paste
+is queued; actual destination text is still verified through the native UI.
 Reset and Quit also restore a staged test clipboard. Production storage remains
 separate. Cleanup credentials come from `OPENAI_API_KEY`
 when supplied, otherwise Keychain; they stay out of config and diagnostics.

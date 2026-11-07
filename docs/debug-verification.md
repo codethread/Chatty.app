@@ -80,13 +80,18 @@ Swift debug binary and owns a fresh process and workspace. Build with
 With an unlocked desktop, create an empty TextEdit document and focus its editor.
 Run `python3 scripts/chatty-debug.py system-paste --target-bundle com.apple.TextEdit`
 and check that
-`state.systemPasteTarget` is `com.apple.TextEdit`. Start injected dictation or
-replay the speech fixture, then Stop. Inspect the actual TextEdit document through
+`state.systemPasteTarget` is `com.apple.TextEdit`. Note the current
+`systemPasteDispatches` count. Start injected dictation or replay the speech
+fixture, observe Listening, then Stop. Wait for Complete and for
+`wait --paste-dispatches N` with the previous count plus one. Inspect the actual TextEdit document through
 the native UI; the text must match the completed transcript exactly. This path
 runs production app activation and CGEvent Command-V, rather than the private
 NSTextView paste shortcut. Finish with `restore-clipboard`; the snapshot reports
 `clipboardRestored: true` only after every saved representation compares equal.
 Clipboard data stays in memory and is never returned by the control API.
+Restoration is rejected while keyboard paste is still queued. Dispatch completion
+proves that events were posted; the destination's actual text remains the final
+acceptance check.
 The mode is one-shot and must be explicitly rearmed for another test. If someone
 copies new content during the check, restoration keeps those newer contents and
 reports that the clipboard changed.
@@ -143,3 +148,14 @@ have an explicit 900-second deadline. The ordinary suite uses the shared cache.
 
 See [macOS I/O testing research](macos-io-testing.md) for the proposed virtual-input
 and XCUITest lane that would additionally cross the real microphone input tap.
+
+On 2026-11-07 the empty-cache check rejected Save before download, displayed the
+real network download, and completed after an interruption/restart using the
+partial cache: approximately 626 MB, no partial files remaining. All 29 app
+workflows passed against that model. Native controls also saved both engine
+choices and both paths were observed pasting into TextEdit. The final Apple
+check used a clean document and waited for actual paste dispatch before inspecting
+its text. Premature clipboard restoration was rejected, and restoration after
+inspection compared all representations successfully. Local artifacts are
+`build/speech-download-resume-verification.json`, `build/native-verification.json`
+and `build/Chatty-production-engines.rtf`.

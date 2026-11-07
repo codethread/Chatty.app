@@ -68,7 +68,8 @@ def parser():
     faults = commands.add_parser("faults", help="Configure injected input failures; unspecified faults are cleared")
     for flag in ["hold-preparation", "fail-start", "fail-stop", "fail-cancel"]:
         faults.add_argument("--" + flag, action="store_true")
-    wait = commands.add_parser("wait", help="Wait for observed state changes, with a 15-second deadline")
+    wait = commands.add_parser("wait", help="Wait for observed state changes, with a 15-second default deadline")
+    wait.add_argument("--paste-dispatches", dest="systemPasteDispatches", type=int)
     wait.add_argument("--timeout", dest="timeoutSeconds", type=int)
     wait.add_argument("--model-phase", dest="modelPhase", choices=["notDownloaded", "downloaded", "preparing", "ready", "failed"])
     wait.add_argument("--history-id", dest="historyID")
@@ -123,7 +124,7 @@ def run(args):
                 "nativeHotkey": {"keyCode": "1 for Escape or 2 for recording; requires globals enabled"},
                 "reset": {"clearData": False},
             },
-            "wait": {"phase": "idle|preparing|listening|finishing|complete|failed", "textContains": "text", "corrected": "EXACT_TEXT", "requestCount": 1, "recordingCount": 1, "historyID": "UUID", "historyPhase": "transcribing|complete|cancelled|failed"},
+            "wait": {"phase": "idle|preparing|listening|finishing|complete|failed", "textContains": "text", "corrected": "EXACT_TEXT", "requestCount": 1, "recordingCount": 1, "historyID": "UUID", "historyPhase": "transcribing|complete|cancelled|failed", "modelPhase": "notDownloaded|downloaded|preparing|ready|failed", "timeoutSeconds": 15, "systemPasteDispatches": 1},
             "requests": "Summaries default to 20, maximum 100. Use --id to inspect one full payload.",
             "ui": "GET /ui/panel, /ui/settings, /ui/paste or /ui/shortcut returns the real control tree.",
         }
@@ -140,7 +141,7 @@ def run(args):
     if args.action == "faults":
         return client.command("inputFaults", holdPreparation=args.hold_preparation, failStart=args.fail_start, failStop=args.fail_stop, failCancel=args.fail_cancel)
     if args.action == "wait":
-        return client.wait(**{k: getattr(args, k) for k in ["phase", "textContains", "corrected", "requestCount", "recordingCount", "historyID", "historyPhase", "modelPhase", "timeoutSeconds"] if getattr(args, k) is not None})
+        return client.wait(**{k: getattr(args, k) for k in ["phase", "textContains", "corrected", "requestCount", "recordingCount", "historyID", "historyPhase", "modelPhase", "timeoutSeconds", "systemPasteDispatches"] if getattr(args, k) is not None})
     if args.action == "ui":
         if args.show or args.control_label:
             client.command("ui", view=args.view, show=args.show, control=args.control_label, value=args.value, click=args.click)

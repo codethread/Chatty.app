@@ -67,6 +67,7 @@ final class DebugHarness {
         let systemPasteTarget: String?
         let clipboardNeedsRestore: Bool
         let clipboardRestored: Bool
+        let systemPasteDispatches: Int
     }
     struct Condition: Codable, Sendable {
         var phase: String?
@@ -78,6 +79,7 @@ final class DebugHarness {
         var historyPhase: RecordingTranscriptionController.State.Phase?
         var modelPhase: LocalSpeechRecognizer.ModelState.Phase?
         var timeoutSeconds: Int?
+        var systemPasteDispatches: Int?
     }
     struct Command: Decodable {
         enum Action: String, Decodable {
@@ -178,6 +180,11 @@ final class DebugHarness {
         FileHandle.standardOutput.write(Data(("CHATTY_HARNESS_READY " + DebugEnvironment.controlFile.path + "\n").utf8))
     }
 
+    func finishSystemPaste(posted: Bool) {
+        systemPaste.finishDispatch(posted: posted)
+        changed()
+    }
+
     func recordCopy(_ text: String) {
         copied.append(text)
         pasteboard.clearContents()
@@ -206,7 +213,7 @@ final class DebugHarness {
                         platform: platformState?() ?? [:], speechEngine: input.configured.backend, model: await recognizer.modelState(),
                         recognitionEngine: input.source == .audioFile ? input.audioFile.recognitionEngine : input.configured.recognitionEngine,
                         systemPasteTarget: systemPaste.targetID, clipboardNeedsRestore: systemPaste.needsRestore,
-                        clipboardRestored: systemPaste.restoredClipboard)
+                        clipboardRestored: systemPaste.restoredClipboard, systemPasteDispatches: systemPaste.dispatchCount)
     }
 
     struct Acknowledgment: Encodable { let accepted: String; let artifact: URL? }
@@ -406,7 +413,8 @@ final class DebugHarness {
                (condition.requestCount == nil || state.requestCount >= condition.requestCount!) &&
                (condition.recordingCount == nil || state.recordingCount == condition.recordingCount) &&
                (condition.historyID == nil || state.history[condition.historyID!.uuidString]?.phase == condition.historyPhase) &&
-               (condition.modelPhase == nil || state.model.phase == condition.modelPhase) { return state }
+               (condition.modelPhase == nil || state.model.phase == condition.modelPhase) &&
+               (condition.systemPasteDispatches == nil || state.systemPasteDispatches >= condition.systemPasteDispatches!) { return state }
         }
         throw CancellationError()
     }

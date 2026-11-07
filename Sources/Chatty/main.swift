@@ -586,6 +586,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func pasteClipboardContents() {
+        #if CHATTY_DEBUG_PANEL
+        var posted = false
+        defer { harness!.finishSystemPaste(posted: posted) }
+        #endif
         let commandKey: CGKeyCode = 0x37
         let vKey: CGKeyCode = 0x09
 
@@ -606,6 +610,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         vDown.post(tap: .cghidEventTap)
         vUp.post(tap: .cghidEventTap)
         commandUp.post(tap: .cghidEventTap)
+        #if CHATTY_DEBUG_PANEL
+        posted = true
+        #endif
     }
 
     private func transcribe(_ recording: Recording, pasteAfterCopy: Bool = false) {
