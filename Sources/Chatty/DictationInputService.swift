@@ -2,7 +2,7 @@ import Foundation
 
 /// A complete snapshot: provisional words replace the previous provisional words.
 /// Recognition finality does not imply LLM cleanup has happened.
-struct TranscriptSnapshot: Equatable, Sendable {
+struct TranscriptSnapshot: Codable, Equatable, Sendable {
     var committedText: String
     var partialText: String
 

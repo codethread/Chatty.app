@@ -15,7 +15,9 @@ final class GlobalHotkey {
         self.action = action
     }
 
-    func update(binding: KeyBinding?) {
+    var isRegistered: Bool { hotKey != nil }
+
+    func update(binding: KeyBinding?) throws {
         if let hotKey {
             UnregisterEventHotKey(hotKey)
             self.hotKey = nil
@@ -33,7 +35,7 @@ final class GlobalHotkey {
                 selfPointer,
                 &handler
             )
-            guard installStatus == noErr else { return }
+            guard installStatus == noErr else { throw HotkeyError(operation: "install shortcut handler", status: installStatus) }
         }
 
         let hotKeyID = EventHotKeyID(signature: fourCharCode("CHTY"), id: id)
@@ -47,6 +49,7 @@ final class GlobalHotkey {
         )
         if registerStatus != noErr {
             hotKey = nil
+            throw HotkeyError(operation: "register recording shortcut", status: registerStatus)
         }
     }
 

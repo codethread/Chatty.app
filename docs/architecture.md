@@ -1,8 +1,8 @@
 # Chatty architecture
 
 Chatty is one local Swift/AppKit application. Production runs in the menu bar;
-the debug build opens a floating control window with local Nemotron or Apple
-microphone recognition, typed input, and local audio replay. All use the same
+the debug build opens a floating control window with injected snapshots, local
+Nemotron or Apple microphone recognition, typed input, and local audio replay. All use the same
 dictation and transcript-cleanup pipeline. Production uses Apple recognition.
 
 ## C1 — System context
@@ -49,8 +49,12 @@ flowchart LR
   app -- "POST /v1/responses and /v1/audio/transcriptions" --> api
 ```
 
-Files live under `~/Library/Application Support/Chatty/`: `config.json`,
-`recordings.json`, and `Recordings/`. Cleanup credentials come from `OPENAI_API_KEY`
+Production files live under `~/Library/Application Support/Chatty/`:
+`config.json`, `recordings.json`, and `Recordings/`. ConfigStore and RecordingStore
+receive their root at composition time. Debug defaults to the separate
+`Chatty Debug/` sibling; `run-debug.sh` uses this checkout's `build/debug-data/`.
+Its private clipboard, AppKit paste destination and authenticated loopback control
+server never replace production storage or clipboard. Cleanup credentials come from `OPENAI_API_KEY`
 when supplied, otherwise Keychain; they stay out of config and diagnostics.
 
 ## C3 — App components
@@ -66,34 +70,50 @@ flowchart TD
   credentials["OpenAICredentials — asynchronous loading and in-memory cache"]
   overlay["OverlayWindowController and RecordingWaveformView"]
   storage["RecordingStore and ConfigStore"]
-  history["OpenAITranscriber — saved-audio retranscription"]
+  history["RecordingTranscriptionController — saved-audio lifecycle"]
+  audioapi["OpenAITranscriber — multipart audio upload"]
+  presentation["OverlayPresentation — current operation lease"]
+  harness["DebugHarness — control API and actual AppKit actions"]
+  fake["FakeOpenAI — loopback HTTP payload receiver"]
   entry --> core
   entry --> storage
   entry --> history
   core -- "Starts, stops and consumes events" --> input
   core --> cleanup
-  core --> overlay
+  core --> presentation
+  history --> presentation
+  presentation --> overlay
+  history --> audioapi
+  history --> storage
+  harness --> core
+  harness --> history
+  harness --> fake
+  provider -- "Debug HTTP requests" --> fake
+  audioapi -- "Debug HTTP uploads" --> fake
   core --> storage
   cleanup --> document
   cleanup --> provider
   provider --> credentials
-  cleanup -- "Publishes pending and corrected text" --> overlay
+  cleanup -- "Publishes pending and corrected text" --> core
 ```
 
 | Boundary | Responsibility and source |
 | --- | --- |
-| Composition and UI | [main.swift](../Sources/Chatty/main.swift) injects services, wires shortcut and overlay actions, settings, clipboard and paste callbacks. [DebugPanelController](../Sources/Chatty/DebugPanelController.swift) drives the same core and exposes request diagnostics. |
+| Composition and UI | [main.swift](../Sources/Chatty/main.swift) injects services, wires shortcut and overlay actions, settings, clipboard and paste callbacks. [DebugPanelController](../Sources/Chatty/DebugPanelController.swift) drives the same core and exposes request diagnostics. [DebugHarness](../Sources/Chatty/DebugHarness.swift) adds authenticated loopback commands, event-based waits and snapshots; [DebugUI](../Sources/Chatty/DebugUI.swift) operates actual AppKit controls. |
+| Saved recordings | [RecordingTranscriptionController](../Sources/Chatty/RecordingTranscriptionController.swift) owns uploads, cancellation, retry, persistence and copy/paste callbacks. Run IDs reject stale replies; [OverlayPresentation](../Sources/Chatty/OverlayPresentation.swift) leases the overlay to the current operation so older completion/dismissal cannot replace a newer session. |
 | Session lifecycle | [DictationController](../Sources/Chatty/DictationController.swift) owns preparation, listening, finishing, completion and failure. Session IDs reject stale input after cancel or restart. |
-| Input | [DictationInputService](../Sources/Chatty/DictationInputService.swift) emits transcript snapshots, levels and file size. [MicrophoneDictationService](../Sources/Chatty/MicrophoneDictationService.swift) copies one audio tap into an actor for AAC recording and conversion, feeding either Apple SpeechAnalyzer or [LocalSpeechRecognizer](../Sources/Chatty/LocalSpeechRecognizer.swift). The latter owns a warm FluidAudio/Core ML Nemotron 600M model and consumes 16 kHz mono audio in 560 ms model chunks. [DebugDictationInputService](../Sources/Chatty/DebugDictationInputService.swift) selects microphone, typed text, or [clock-paced file audio](../Sources/Chatty/DebugAudioReplay.swift). |
+| Input | [DictationInputService](../Sources/Chatty/DictationInputService.swift) emits transcript snapshots, levels and file size. [MicrophoneDictationService](../Sources/Chatty/MicrophoneDictationService.swift) copies one audio tap into an actor for AAC recording and conversion, feeding either Apple SpeechAnalyzer or [LocalSpeechRecognizer](../Sources/Chatty/LocalSpeechRecognizer.swift). The latter owns a warm FluidAudio/Core ML Nemotron 600M model and consumes 16 kHz mono audio in 560 ms model chunks. [DebugDictationInputService](../Sources/Chatty/DebugDictationInputService.swift) selects injected snapshots, microphone, typed text, or [clock-paced file audio](../Sources/Chatty/DebugAudioReplay.swift). |
 | Cleanup | [CorrectionController](../Sources/Chatty/CorrectionController.swift) serializes requests through `TranscriptCorrecting`, coalescing new speech after each reply. [TranscriptCorrections](../Sources/Chatty/TranscriptCorrections.swift) tracks raw recognition separately from corrected text and replaces only the submitted window. [TranscriptLayout](../Sources/Chatty/TranscriptLayout.swift) measures context using the overlay's font and wrapping width. |
-| API boundary | [OpenAITranscriptCorrector](../Sources/Chatty/OpenAITranscriptCorrector.swift) reuses a URLSession, validates responses and cancels individual requests. [OpenAICredentials](../Sources/Chatty/OpenAICredentials.swift) shares a background Keychain read and caches the key; callers can cancel their wait. [DebugTranscriptCorrector](../Sources/Chatty/DebugTranscriptCorrector.swift) selects REST, fake or Pi and reports timings. |
+| API boundary | [OpenAITranscriptCorrector](../Sources/Chatty/OpenAITranscriptCorrector.swift) reuses a URLSession, validates responses and cancels individual requests. [OpenAICredentials](../Sources/Chatty/OpenAICredentials.swift) shares a background Keychain read and caches the key; callers can cancel their wait. [DebugTranscriptCorrector](../Sources/Chatty/DebugTranscriptCorrector.swift) selects REST, fake or Pi and reports timings. [FakeOpenAI](../Sources/Chatty/FakeOpenAI.swift) receives the actual serialized JSON/multipart bytes over loopback HTTP, returns SCREAMING_SNAKE_CASE and injects response failures or held replies. |
 | Presentation and persistence | [OverlayWindowController](../Sources/Chatty/OverlayWindowController.swift) displays live, pending and corrected text in a growing five-line viewport. [RecordingStore](../Sources/Chatty/RecordingStore.swift) saves recordings and transcripts; [ConfigStore](../Sources/Chatty/ShortcutConfig.swift) saves shortcuts and cleanup settings. [OpenAITranscriber](../Sources/Chatty/OpenAITranscriber.swift) handles saved-audio uploads. |
 
 ## Runtime contracts
 
 - Local model preparation downloads weights once into FluidAudio's Application
   Support cache and loads them off the main actor. The demo's microphone and
-  file sources share that recognizer. Sessions reset encoder/decoder state while
+  file sources share that recognizer and the audio conversion/AAC recording
+  processor. Stereo inputs downmix before mono analysis and recording. Sessions
+  reset encoder/decoder state while
   retaining loaded models. Small capture packets accumulate into 560 ms chunks;
   cached encoder context spans chunks within an utterance. After speech, about
   one second below -50 dBFS closes the utterance: flush remaining audio, add a
@@ -121,6 +141,12 @@ flowchart TD
   corrected recognition invalidates its cleanup and resubmits the stable source.
 - Recognition, cleanup and persistence failures are visible. Available audio
   is retained on failure for recovery; an incomplete transcript is not pasted.
+- Debug defaults to injected input and loopback HTTP fake; no token is needed.
+  The fake's held replies and injected input gates let scenarios wait for real
+  events, cancel and then release stale work. The CLI has bounded request lists
+  and explicit full-payload expansion. Debug global shortcuts start disabled.
+  See [debug verification](debug-verification.md) for repeatable checks and
+  external microphone/API/desktop boundaries.
 - AppKit and session coordination use the main actor. The audio tap owns copies
   before crossing queues; conversion/file writing run in a separate actor.
   Blocking Keychain access runs on a dispatch queue, outside the UI and Swift

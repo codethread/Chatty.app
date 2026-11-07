@@ -2,20 +2,15 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+export CHATTY_DEBUG_DIRECTORY="$PWD/build/debug-data"
+export CHATTY_DEBUG_CONTROL_FILE="$PWD/build/debug-control.json"
+
 qlock exec --lock /tmp/agent-cpu.lock -w 60 -- swift build -Xswiftc -DCHATTY_DEBUG_PANEL
 
-# Only replace the debug app. Production installs and build numbers are untouched.
-swift -e 'import AppKit; for app in NSWorkspace.shared.runningApplications where app.bundleIdentifier == "local.chatty.Chatty.debug" { app.terminate() }'
+# Replace only this checkout's debug bundle. Other worktrees and user builds stay running.
 app="$PWD/build/Chatty Debug.app"
-mkdir -p "$app/Contents/MacOS"
-cp .build/debug/Chatty "$app/Contents/MacOS/Chatty"
-cp Sources/Chatty/Info.plist "$app/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier local.chatty.Chatty.debug' "$app/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c 'Set :CFBundleName Chatty Debug' "$app/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName Chatty Debug' "$app/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c 'Set :LSUIElement false' "$app/Contents/Info.plist"
-codesign --force --sign - --identifier local.chatty.Chatty.debug "$app"
-codesign --verify --strict "$app"
+CHATTY_DEBUG_BUNDLE="$app" swift -e 'import AppKit; import Foundation; let path = ProcessInfo.processInfo.environment["CHATTY_DEBUG_BUNDLE"]!; for app in NSWorkspace.shared.runningApplications where app.bundleURL?.path == path { app.terminate() }'
+./scripts/package-debug.sh "$app" local.chatty.Chatty.debug
 
 # Launch directly to inherit OPENAI_API_KEY when supplied by the calling shell.
 # Never place credentials in command arguments, files, or log output.

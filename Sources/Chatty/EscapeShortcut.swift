@@ -11,7 +11,9 @@ final class EscapeShortcut {
         self.action = action
     }
 
-    func start() {
+    var isRegistered: Bool { hotKey != nil }
+
+    func start() throws {
         guard hotKey == nil, handler == nil else { return }
 
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
@@ -24,7 +26,7 @@ final class EscapeShortcut {
             selfPointer,
             &handler
         )
-        guard installStatus == noErr else { return }
+        guard installStatus == noErr else { throw HotkeyError(operation: "install Escape handler", status: installStatus) }
 
         let hotKeyID = EventHotKeyID(signature: fourCharCode("CHTY"), id: 1)
         let registerStatus = RegisterEventHotKey(
@@ -37,7 +39,7 @@ final class EscapeShortcut {
         )
         guard registerStatus == noErr else {
             stop()
-            return
+            throw HotkeyError(operation: "register Escape shortcut", status: registerStatus)
         }
     }
 

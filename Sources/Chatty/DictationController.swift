@@ -7,13 +7,14 @@ final class DictationController {
     }
 
     private let input: any DictationInputService
-    private let overlay: OverlayWindowController
+    private let overlay: any DictationPresenting
     private let recordings: RecordingStore
     private let corrections: CorrectionController
     private var sessionID: UUID?
     private var destination: (id: UUID, url: URL)?
     private var indexedRecordingID: UUID?
     private var streamTask: Task<Void, Never>?
+    private var observers: [UUID: AsyncStream<Void>.Continuation] = [:]
 
     private(set) var phase: Phase = .idle
     private(set) var transcript = TranscriptSnapshot.empty
@@ -31,7 +32,7 @@ final class DictationController {
         }
     }
 
-    init(input: any DictationInputService, corrections: CorrectionController, overlay: OverlayWindowController, recordings: RecordingStore) {
+    init(input: any DictationInputService, corrections: CorrectionController, overlay: any DictationPresenting, recordings: RecordingStore) {
         self.input = input
         self.corrections = corrections
         self.overlay = overlay
@@ -40,11 +41,22 @@ final class DictationController {
             guard let self else { return }
             self.overlay.updateCorrections(document, activeRange: activeRange)
             self.corrections.contextWidth = self.overlay.transcriptWidth
-            self.onStateChange?()
+            self.notifyChange()
         }
         corrections.onError = { [weak self] error in
             guard let self, let id = self.sessionID else { return }
             Task { await self.fail(error, session: id) }
+        }
+    }
+
+    func changes() -> AsyncStream<Void> {
+        let id = UUID()
+        return AsyncStream { continuation in
+            observers[id] = continuation
+            continuation.yield(())
+            continuation.onTermination = { @Sendable [weak self] _ in
+                Task { @MainActor in self?.observers.removeValue(forKey: id) }
+            }
         }
     }
 
@@ -64,6 +76,7 @@ final class DictationController {
         destination = nil
         indexedRecordingID = nil
         transcript = .empty
+        overlay.begin()
         corrections.reset()
         setPhase(.preparing)
         overlay.showPreparing()
@@ -143,11 +156,7 @@ final class DictationController {
             setPhase(.idle)
         } catch {
             guard sessionID == cancellationID else { return }
-            sessionID = nil
-            let message = error.localizedDescription
-            setPhase(.failed(message))
-            overlay.showError(message)
-            onError?(message)
+            await fail(error, session: cancellationID)
         }
     }
 
@@ -162,8 +171,8 @@ final class DictationController {
         case .transcript(let snapshot):
             transcript = snapshot
             corrections.update(snapshot)
-        case .level(let level): overlay.updateLevel(level)
-        case .fileSize(let bytes): overlay.updateFileSize(bytes)
+        case .level(let level): overlay.updateLevel(level); notifyChange()
+        case .fileSize(let bytes): overlay.updateFileSize(bytes); notifyChange()
         }
     }
 
@@ -192,6 +201,7 @@ final class DictationController {
         sessionID = nil
         streamTask = nil
         setPhase(.failed(message))
+        overlay.begin()
         overlay.showError(message)
         onError?(message)
     }
@@ -200,7 +210,12 @@ final class DictationController {
         let wasActive = isActive
         self.phase = phase
         if wasActive != isActive { onActivityChange?(isActive) }
+        notifyChange()
+    }
+
+    private func notifyChange() {
         onStateChange?()
+        for observer in observers.values { observer.yield(()) }
     }
 }
 

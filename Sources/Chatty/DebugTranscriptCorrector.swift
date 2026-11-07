@@ -4,28 +4,38 @@ import Foundation
 @MainActor
 final class DebugTranscriptCorrector: TranscriptCorrecting {
     enum Backend: Int, CaseIterable {
-        case transcriptionOnly, openAI, fake, pi
+        case fake, transcriptionOnly, openAI, pi
         var title: String {
             switch self {
             case .transcriptionOnly: "Transcription only · no cleanup"
             case .openAI: "OpenAI REST · gpt-5.4-mini · Fast"
-            case .fake: "Fake · uppercase after 1 second"
+            case .fake: "Local HTTP fake · SCREAMING_SNAKE_CASE"
             case .pi: "Pi · gpt-5.4-mini"
             }
         }
     }
 
-    var backend: Backend = .transcriptionOnly
+    var backend: Backend = .fake
     var onDiagnosticsChange: (() -> Void)?
     private(set) var diagnostics = "Requests use the configured cleanup prompt and word dictionary. Credentials are never logged.\n"
     private(set) var lastStage = "Ready"
     private var activeRequests: [UUID: ContinuousClock.Instant] = [:]
     private let credentials: OpenAICredentials
+    private var fake: OpenAITranscriptCorrector?
     private lazy var direct = OpenAITranscriptCorrector(credentials: credentials) { [weak self] event in
         await self?.record(event)
     }
 
     init(credentials: OpenAICredentials) { self.credentials = credentials }
+
+    func connectFake(to baseURL: URL) {
+        fake = OpenAITranscriptCorrector(credentials: OpenAICredentials(apiKey: FakeOpenAI.apiKey),
+                                         endpoint: baseURL.appendingPathComponent("v1/responses")) { [weak self] event in
+            await self?.record(event)
+        }
+    }
+
+    func log(_ text: String) { diagnostics += text + "\n"; onDiagnosticsChange?() }
 
     var activity: String {
         guard let start = activeRequests.values.min() else { return lastStage }
@@ -43,7 +53,9 @@ final class DebugTranscriptCorrector: TranscriptCorrecting {
         switch selected {
         case .transcriptionOnly: return text
         case .openAI: return try await direct.correct(text, settings: settings)
-        case .fake: corrector = FakeTranscriptCorrector()
+        case .fake:
+            guard let fake else { throw DebugInputError.injected("The local HTTP fake is not ready") }
+            return try await fake.correct(text, settings: settings)
         case .pi: corrector = PiTranscriptCorrector()
         }
         let id = UUID()

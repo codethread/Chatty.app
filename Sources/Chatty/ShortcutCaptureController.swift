@@ -9,6 +9,17 @@ final class ShortcutCaptureController {
     private var monitor: Any?
     private var completion: ((KeyBinding) -> Void)?
     private let hintLabel = NSTextField(labelWithString: "")
+    #if CHATTY_DEBUG_PANEL
+    var debugWindow: NSWindow? { panel }
+    func injectKey(code: UInt16, modifiers: NSEvent.ModifierFlags, characters: String) throws {
+        guard let panel else { throw DebugInputError.injected("Open shortcut capture first") }
+        let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers,
+                                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: panel.windowNumber,
+                                    context: nil, characters: characters, charactersIgnoringModifiers: characters,
+                                    isARepeat: false, keyCode: code)!
+        _ = handle(event)
+    }
+    #endif
 
     func begin(current: KeyBinding?, completion: @escaping (KeyBinding) -> Void) {
         guard panel == nil else { return }

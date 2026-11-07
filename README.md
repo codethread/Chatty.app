@@ -76,7 +76,10 @@ available again through **Show Debug Panel…**, Command-0, or the Dock icon.
 The panel drives the same `DictationController` and overlay as production.
 Choose a **Speech recognition source**:
 
-- **Microphone · Nemotron 600M · 560 ms** (default) uses a local quantized Core ML
+- **Injected transcript · synthetic recording** (default) accepts stable text and
+  a separate provisional tail. **Inject snapshot** emits them through the real
+  input stream. Stop saves a playable synthetic AAC recording.
+- **Microphone · Nemotron 600M · 560 ms** uses a local quantized Core ML
   model through FluidAudio. **Prepare local model** downloads about 626 MB once
   and loads it into memory. Prepare before speaking; initial Core ML preparation
   can take several seconds. Weights stay loaded between sessions. Models live in
@@ -88,20 +91,24 @@ Choose a **Speech recognition source**:
 - **Typed text** enables the text editor and **Load sample → Stream text**.
 - **Replay audio…** selects a local audio file and sends it through Nemotron in
   clock-paced 80 ms packets. The overlay updates during playback, then finalizes
-  and copies the transcript automatically. This does not play sound or save a
-  second recording. Stop flushes the supplied audio; Cancel discards the session.
+  and copies the transcript automatically. File packets use the microphone's
+  resampling, level metering and AAC recording path. This does not play sound.
+  Stop flushes supplied audio; Cancel discards the recording.
 
 Microphone modes request microphone permission on first use and save recordings
 on Stop. Cancel copies visible text and discards unsaved audio. Both clear the
-overlay. The demo copies text without pasting it into another application.
-Debug builds skip startup microphone and Accessibility prompts.
+overlay. The demo uses a private clipboard and a real AppKit test paste window.
+Debug builds skip startup microphone and Accessibility prompts. Global shortcuts
+start disabled; enable them explicitly with the debug CLI when testing them.
 
 Choose a **Correction backend** in the debug panel:
 
-- **Transcription only** (default) displays recognition without network cleanup.
+- **Local HTTP fake · SCREAMING_SNAKE_CASE** (default) receives the actual
+  serialized OpenAI request on loopback and transforms its posted text. Saved
+  audio uploads use a configurable reference transcript. No API token is needed.
+- **Transcription only** displays recognition without network cleanup.
 - **OpenAI REST** runs the same direct `gpt-5.4-mini` request as production,
   using your saved OpenAI API key. **Set API key…** replaces it in Keychain.
-- **Fake** waits one second, then uppercases each submitted passage without network access.
 - **Pi** uses the same mini model without reasoning for timing comparisons.
 
 The log shows local partial transcripts, decode time and final flush time. For
@@ -142,12 +149,36 @@ ordinary Swift debug builds. To run it directly during development:
 ./scripts/run-debug.sh
 ```
 
-The launcher reuses `build/Chatty Debug.app` without installing a production app
-or incrementing its build number. It inherits `OPENAI_API_KEY` when already set
+The launcher reuses this checkout's `build/Chatty Debug.app` without installing a
+production app or incrementing its build number. Config and recordings live in
+`build/debug-data/`; the authenticated control connection is recorded in
+`build/debug-control.json`. Installed debug builds use the separate
+`~/Library/Application Support/Chatty Debug/` directory. It inherits `OPENAI_API_KEY` when already set
 in your shell; otherwise the app uses Keychain. The key is kept in memory and
 is never passed in command arguments or written to debug logs.
 
-On first launch Chatty front-loads setup:
+The panel exposes HTTP failures, held replies, input failures, request payloads,
+saved-recording retry/cancel/copy, and the settings window. The CLI drives the
+same running controllers and can operate actual AppKit controls by label:
+
+```sh
+python3 scripts/chatty-debug.py --help
+python3 scripts/chatty-debug.py start
+python3 scripts/chatty-debug.py wait --phase listening
+python3 scripts/chatty-debug.py inject --committed 'A complete sentence.' --partial 'live words'
+python3 scripts/chatty-debug.py stop
+python3 scripts/chatty-debug.py wait --phase complete
+./scripts/check.sh
+```
+
+`check.sh` runs locked Swift checks, a signed production archive build, and 27
+scenarios in its own signed debug app and sandbox. It includes local-model audio
+replay; `--skip-audio` omits the model-dependent scenarios. It writes a JSON report
+and own-view PNG artifacts, quits only its app, and leaves user builds alone.
+See [debug verification](docs/debug-verification.md) for evidence, commands and
+external testing boundaries.
+
+Production first launch front-loads setup:
 
 - Microphone access
 - Accessibility access, needed for the global double-left-shift shortcut

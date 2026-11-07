@@ -85,12 +85,3 @@ final class CorrectionController {
         }
     }
 }
-
-#if CHATTY_DEBUG_PANEL
-struct FakeTranscriptCorrector: TranscriptCorrecting {
-    func correct(_ text: String, settings: CorrectionSettings) async throws -> String {
-        try await Task.sleep(for: .seconds(1))
-        return text.uppercased()
-    }
-}
-#endif

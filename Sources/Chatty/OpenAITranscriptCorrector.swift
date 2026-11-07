@@ -20,10 +20,14 @@ final class OpenAITranscriptCorrector: TranscriptCorrecting {
     static let model = "gpt-5.4-mini"
     private let credentials: OpenAICredentials
     private let session: URLSession
+    private let endpoint: URL
     private let onEvent: (@Sendable (CorrectionRequestEvent) async -> Void)?
 
-    init(credentials: OpenAICredentials, onEvent: (@Sendable (CorrectionRequestEvent) async -> Void)? = nil) {
+    init(credentials: OpenAICredentials,
+         endpoint: URL = URL(string: "https://api.openai.com/v1/responses")!,
+         onEvent: (@Sendable (CorrectionRequestEvent) async -> Void)? = nil) {
         self.credentials = credentials
+        self.endpoint = endpoint
         self.onEvent = onEvent
         session = URLSession(configuration: .ephemeral)
     }
@@ -43,7 +47,7 @@ final class OpenAITranscriptCorrector: TranscriptCorrecting {
             await report(.credentials)
             let key = try await credentials.load()
             try Task.checkCancellation()
-            let request = try Self.request(text, settings: settings, apiKey: key)
+            let request = try Self.request(text, settings: settings, apiKey: key, endpoint: endpoint)
             await report(.sending)
             // URLSession's async API cancels this request with its calling Task.
             // The shared session remains available for subsequent batches.
@@ -65,8 +69,9 @@ final class OpenAITranscriptCorrector: TranscriptCorrecting {
         }
     }
 
-    static func request(_ text: String, settings: CorrectionSettings, apiKey: String) throws -> URLRequest {
-        var request = URLRequest(url: URL(string: "https://api.openai.com/v1/responses")!)
+    static func request(_ text: String, settings: CorrectionSettings, apiKey: String,
+                        endpoint: URL = URL(string: "https://api.openai.com/v1/responses")!) throws -> URLRequest {
+        var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

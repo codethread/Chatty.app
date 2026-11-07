@@ -35,12 +35,15 @@ final class DebugAudioFileInputService: DictationInputService {
     init(recognizer: LocalSpeechRecognizer) { self.recognizer = recognizer }
 
     func start(recordingURL: URL) async throws -> AsyncThrowingStream<DictationEvent, Error> {
-        let session = Session()
+        let session = Session(recordingURL: recordingURL)
         self.session = session
         try await recognizer.prepare()
         try Task.checkCancellation()
         guard self.session === session else { throw CancellationError() }
         let url = audioURL!
+        let format = try AVAudioFile(forReading: url).processingFormat
+        let processor = try MicrophoneBufferProcessor(recordingURL: recordingURL, inputFormat: format,
+                                                      analysisFormat: AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1)!)
         let captured = session.captured
         let feeder = Task.detached {
             do {
@@ -50,17 +53,25 @@ final class DebugAudioFileInputService: DictationInputService {
             }
         }
         session.feeder = feeder
+        let processing = Task {
+            try await processor.run(input: captured.stream, analysis: session.analysis.continuation,
+                                    events: session.events.continuation)
+        }
+        session.processing = processing
         let diagnostic = onDiagnostic
         session.task = Task {
             do {
-                try await recognizer.run(input: captured.stream, events: session.events.continuation,
+                try await recognizer.run(input: session.analysis.stream, events: session.events.continuation,
                                          onDiagnostic: { await diagnostic?($0) })
+                try await processing.value
                 try await feeder.value
                 session.events.continuation.finish()
                 onFinished?()
             } catch {
                 feeder.cancel()
+                processing.cancel()
                 _ = try? await feeder.value
+                _ = try? await processing.value
                 session.events.continuation.finish(throwing: error)
                 throw error
             }
@@ -72,23 +83,31 @@ final class DebugAudioFileInputService: DictationInputService {
         // Stopping a replay flushes the packets already supplied, just like mic stop.
         session?.feeder?.cancel()
         try await session?.task?.value
-        return nil
+        return session?.recordingURL
     }
 
     func cancel() async throws {
         let cancelled = session
         session = nil
         cancelled?.feeder?.cancel()
+        cancelled?.processing?.cancel()
         cancelled?.task?.cancel()
         _ = try? await cancelled?.task?.value
         cancelled?.events.continuation.finish()
+        if let url = cancelled?.recordingURL, FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
+        }
     }
 
     private final class Session {
         let captured = AsyncStream<AnalyzerInput>.makeStream()
+        let analysis = AsyncStream<AnalyzerInput>.makeStream()
         let events = AsyncThrowingStream<DictationEvent, Error>.makeStream()
+        let recordingURL: URL
         var feeder: Task<Void, Error>?
+        var processing: Task<Void, Error>?
         var task: Task<Void, Error>?
+        init(recordingURL: URL) { self.recordingURL = recordingURL }
     }
 }
 #endif

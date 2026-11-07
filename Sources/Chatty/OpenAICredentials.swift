@@ -7,8 +7,11 @@ actor OpenAICredentials {
     private var key: String?
     private var loadingID: UUID?
     private var waiters: [UUID: AsyncThrowingStream<String, Error>.Continuation] = [:]
+    private let readKey: @Sendable () async throws -> String
 
-    init(apiKey: String? = ProcessInfo.processInfo.environment["OPENAI_API_KEY"]) {
+    init(apiKey: String? = ProcessInfo.processInfo.environment["OPENAI_API_KEY"],
+         readKey: @escaping @Sendable () async throws -> String = OpenAICredentials.readKeychain) {
+        self.readKey = readKey
         if let apiKey {
             let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty { key = trimmed }
@@ -27,9 +30,9 @@ actor OpenAICredentials {
         if loadingID == nil {
             let id = UUID()
             loadingID = id
-            DispatchQueue.global(qos: .userInitiated).async { [self] in
-                let result = Result { try KeychainStore.requireAPIKey() }
-                Task { await loaded(result, id: id) }
+            Task {
+                do { loaded(.success(try await readKey()), id: id) }
+                catch { loaded(.failure(error), id: id) }
             }
         }
         for try await key in stream {
@@ -66,5 +69,13 @@ actor OpenAICredentials {
 
     private func removeWaiter(_ id: UUID) {
         waiters.removeValue(forKey: id)
+    }
+
+    nonisolated private static func readKeychain() async throws -> String {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(with: Result { try KeychainStore.requireAPIKey() })
+            }
+        }
     }
 }

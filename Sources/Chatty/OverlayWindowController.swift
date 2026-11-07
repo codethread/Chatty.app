@@ -1,12 +1,21 @@
 import AppKit
 
 @MainActor
-final class OverlayWindowController: NSWindowController {
+final class OverlayWindowController: NSWindowController, DictationPresenting {
     private let content = DictationOverlayView()
     private var recordingStartedAt: Date?
     private var durationTimer: Timer?
 
     var transcriptWidth: CGFloat { window!.frame.width - 48 }
+
+    #if DEBUG || CHATTY_DEBUG_PANEL
+    var debugSnapshot: OverlayDebugSnapshot {
+        content.debugSnapshot(visible: window?.isVisible == true, frame: window!.frame)
+    }
+    #if CHATTY_DEBUG_PANEL
+    func renderDebugView(to url: URL) throws { try DebugViewRendering.writePNG(of: content, to: url) }
+    #endif
+    #endif
 
     var onCancel: (() -> Void)? {
         get { content.onCancel }
@@ -318,4 +327,43 @@ private final class DictationOverlayView: NSVisualEffectView {
 
     @objc private func cancelClicked() { onCancel?() }
     @objc private func retryClicked() { onRetry?() }
+
+    #if DEBUG || CHATTY_DEBUG_PANEL
+    func debugSnapshot(visible: Bool, frame: NSRect) -> OverlayDebugSnapshot {
+        var spans: [OverlayDebugSnapshot.Span] = []
+        transcript.textStorage!.enumerateAttribute(.backgroundColor, in: NSRange(location: 0, length: transcript.string.utf16.count)) { value, range, _ in
+            let kind: String
+            if let color = value as? NSColor {
+                if color == NSColor.systemBlue.withAlphaComponent(0.25) { kind = "active" }
+                else if color == NSColor.systemGreen.withAlphaComponent(0.25) { kind = "corrected" }
+                else if color == NSColor.systemYellow.withAlphaComponent(0.25) { kind = "pending" }
+                else { kind = "unknown" }
+            } else { kind = "provisional" }
+            spans.append(.init(kind: kind, location: range.location, length: range.length))
+        }
+        return OverlayDebugSnapshot(visible: visible, status: status.stringValue, text: transcript.string,
+                                    width: frame.width, height: frame.height, documentHeight: transcript.frame.height,
+                                    viewportHeight: scroll.contentView.bounds.height, scrollY: scroll.contentView.bounds.minY,
+                                    spans: spans, canCancel: !cancel.isHidden, canRetry: !retry.isHidden,
+                                    fileSize: fileSize.stringValue)
+    }
+    #endif
 }
+
+#if DEBUG || CHATTY_DEBUG_PANEL
+struct OverlayDebugSnapshot: Codable, Sendable {
+    struct Span: Codable, Sendable { let kind: String; let location: Int; let length: Int }
+    let visible: Bool
+    let status: String
+    let text: String
+    let width: Double
+    let height: Double
+    let documentHeight: Double
+    let viewportHeight: Double
+    let scrollY: Double
+    let spans: [Span]
+    let canCancel: Bool
+    let canRetry: Bool
+    let fileSize: String
+}
+#endif

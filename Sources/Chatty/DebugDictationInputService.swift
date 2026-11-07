@@ -4,9 +4,10 @@ import Foundation
 @MainActor
 final class DebugDictationInputService: DictationInputService {
     enum Source: Int, CaseIterable {
-        case nemotron, apple, typed, audioFile
+        case injected, nemotron, apple, typed, audioFile
         var title: String {
             switch self {
+            case .injected: "Injected transcript · synthetic recording"
             case .nemotron: "Microphone · Nemotron 600M · 560 ms"
             case .apple: "Microphone · Apple SpeechAnalyzer"
             case .typed: "Typed text"
@@ -15,7 +16,8 @@ final class DebugDictationInputService: DictationInputService {
         }
     }
 
-    var source: Source = .nemotron
+    var source: Source = .injected
+    let injected = ScriptedDictationInputService()
     let typed = DebugTextInputService()
     let local: MicrophoneDictationService
     let audioFile: DebugAudioFileInputService
@@ -31,6 +33,7 @@ final class DebugDictationInputService: DictationInputService {
     func start(recordingURL: URL) async throws -> AsyncThrowingStream<DictationEvent, Error> {
         let service: any DictationInputService
         switch source {
+        case .injected: service = injected
         case .nemotron: service = local
         case .apple: service = apple
         case .typed: service = typed

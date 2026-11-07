@@ -1,24 +1,23 @@
 import Foundation
 
-struct Recording: Codable, Identifiable, Equatable {
+struct Recording: Codable, Identifiable, Equatable, Sendable {
     let id: UUID
     let createdAt: Date
     let audioFilename: String
     var transcript: String?
     var transcriptionError: String?
 
-    var audioURL: URL { RecordingStore.recordingsDirectory.appendingPathComponent(audioFilename) }
 }
 
 final class RecordingStore {
-    static let appDirectory: URL = {
+    static let defaultDirectory: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         return base.appendingPathComponent("Chatty", isDirectory: true)
     }()
 
-    static let recordingsDirectory: URL = appDirectory.appendingPathComponent("Recordings", isDirectory: true)
-
-    private static let metadataURL = appDirectory.appendingPathComponent("recordings.json")
+    let appDirectory: URL
+    let recordingsDirectory: URL
+    private let metadataURL: URL
 
     private let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
@@ -33,13 +32,18 @@ final class RecordingStore {
         return decoder
     }()
 
-    init() throws {
-        try FileManager.default.createDirectory(at: Self.recordingsDirectory, withIntermediateDirectories: true)
+    init(directory: URL = RecordingStore.defaultDirectory) throws {
+        appDirectory = directory
+        recordingsDirectory = directory.appendingPathComponent("Recordings", isDirectory: true)
+        metadataURL = directory.appendingPathComponent("recordings.json")
+        try FileManager.default.createDirectory(at: recordingsDirectory, withIntermediateDirectories: true)
     }
 
+    func audioURL(for recording: Recording) -> URL { recordingsDirectory.appendingPathComponent(recording.audioFilename) }
+
     func makeRecordingURL(id: UUID = UUID()) throws -> (id: UUID, url: URL) {
-        try FileManager.default.createDirectory(at: Self.recordingsDirectory, withIntermediateDirectories: true)
-        return (id, Self.recordingsDirectory.appendingPathComponent("\(id.uuidString).m4a"))
+        try FileManager.default.createDirectory(at: recordingsDirectory, withIntermediateDirectories: true)
+        return (id, recordingsDirectory.appendingPathComponent("\(id.uuidString).m4a"))
     }
 
     func addRecording(id: UUID, audioURL: URL, createdAt: Date = Date()) throws -> Recording {
@@ -57,8 +61,8 @@ final class RecordingStore {
     }
 
     func load() throws -> [Recording] {
-        guard FileManager.default.fileExists(atPath: Self.metadataURL.path) else { return [] }
-        let data = try Data(contentsOf: Self.metadataURL)
+        guard FileManager.default.fileExists(atPath: metadataURL.path) else { return [] }
+        let data = try Data(contentsOf: metadataURL)
         return try decoder.decode([Recording].self, from: data)
             .sorted { $0.createdAt > $1.createdAt }
     }
@@ -91,8 +95,9 @@ final class RecordingStore {
         let retained = recordings.filter { $0.createdAt >= cutoff }
 
         for recording in expired {
-            if FileManager.default.fileExists(atPath: recording.audioURL.path) {
-                try FileManager.default.removeItem(at: recording.audioURL)
+            let url = audioURL(for: recording)
+            if FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.removeItem(at: url)
             }
         }
 
@@ -112,9 +117,9 @@ final class RecordingStore {
     }
 
     private func save(_ recordings: [Recording]) throws {
-        try FileManager.default.createDirectory(at: Self.appDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: appDirectory, withIntermediateDirectories: true)
         let data = try encoder.encode(recordings.sorted { $0.createdAt > $1.createdAt })
-        try data.write(to: Self.metadataURL, options: .atomic)
+        try data.write(to: metadataURL, options: .atomic)
     }
 }
 

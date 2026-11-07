@@ -5,7 +5,7 @@ import Carbon.HIToolbox
 final class DoubleShiftShortcut {
     private let action: () -> Void
     private var monitor: Any?
-    private var lastLeftShiftUp: TimeInterval = 0
+    private var gesture = DoubleShiftGesture()
 
     init(action: @escaping () -> Void) {
         self.action = action
@@ -22,20 +22,28 @@ final class DoubleShiftShortcut {
         guard let monitor else { return }
         NSEvent.removeMonitor(monitor)
         self.monitor = nil
-        lastLeftShiftUp = 0
+        gesture = DoubleShiftGesture()
     }
 
     private func handle(event: NSEvent) {
-        guard Int(event.keyCode) == kVK_Shift else { return } // left shift only
-        let isDown = event.modifierFlags.contains(.shift)
-        guard !isDown else { return }
+        if gesture.consume(keyCode: event.keyCode, flags: event.modifierFlags, time: event.timestamp) { action() }
+    }
+}
 
-        let now = ProcessInfo.processInfo.systemUptime
-        if now - lastLeftShiftUp <= Settings.doubleTapInterval {
-            lastLeftShiftUp = 0
-            action()
-        } else {
-            lastLeftShiftUp = now
+struct DoubleShiftGesture {
+    private var lastRelease: TimeInterval?
+
+    mutating func consume(keyCode: UInt16, flags: NSEvent.ModifierFlags, time: TimeInterval) -> Bool {
+        guard flags.intersection([.command, .control, .option]).isEmpty else {
+            lastRelease = nil
+            return false
         }
+        guard Int(keyCode) == kVK_Shift, !flags.contains(.shift) else { return false }
+        if let lastRelease, time - lastRelease <= Settings.doubleTapInterval {
+            self.lastRelease = nil
+            return true
+        }
+        lastRelease = time
+        return false
     }
 }

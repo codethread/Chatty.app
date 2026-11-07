@@ -19,6 +19,18 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
     private let stopButton = NSButton(title: "Stop dictation", target: nil, action: nil)
     private let cancelButton = NSButton(title: "Cancel", target: nil, action: nil)
     private let streamButton = NSButton(title: "Stream text", target: nil, action: nil)
+    private let partialField = NSTextField(string: "")
+    private let fakeBehavior = NSPopUpButton()
+    private let fault = NSPopUpButton()
+    private let historyPicker = NSPopUpButton()
+    private var historyIDs: [UUID] = []
+    private let harnessStatus = NSTextField(wrappingLabelWithString: "Starting isolated harness…")
+    var harness: DebugHarness? {
+        didSet {
+            harness?.onChange = { [weak self] in self?.updateControls() }
+            updateControls()
+        }
+    }
 
     init(input: DebugDictationInputService, controller: DictationController, corrector: DebugTranscriptCorrector,
          onSetAPIKey: @escaping () -> Void) {
@@ -27,7 +39,7 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
         self.corrector = corrector
         self.onSetAPIKey = onSetAPIKey
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 720, height: 720),
+            contentRect: NSRect(x: 0, y: 0, width: 820, height: 920),
             styleMask: [.titled, .closable, .resizable, .utilityWindow],
             backing: .buffered,
             defer: false
@@ -37,14 +49,14 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
         panel.hidesOnDeactivate = false
         panel.setAccessibilitySubrole(.floatingWindow)
         panel.isReleasedWhenClosed = false
-        panel.contentMinSize = NSSize(width: 640, height: 650)
+        panel.contentMinSize = NSSize(width: 760, height: 850)
         super.init(window: panel)
         panel.delegate = self
 
         let title = NSTextField(labelWithString: "Live dictation")
         title.font = .systemFont(ofSize: 22, weight: .semibold)
         let description = NSTextField(wrappingLabelWithString:
-            "Compare local Nemotron with Apple speech recognition using your microphone, or replay typed text. Transcription only keeps speech and text on this Mac. OpenAI and Pi cleanup send text to OpenAI. Stop saves microphone recordings and copies text; Escape copies and discards audio."
+            "Inject recognition snapshots, replay audio, or compare microphones using the real controllers and overlay. The local HTTP fake returns SCREAMING_SNAKE_CASE without a token. Debug recordings, settings, clipboard and paste target are isolated from production. OpenAI/Pi modes send text to OpenAI."
         )
         description.font = .systemFont(ofSize: 12)
         description.textColor = .secondaryLabelColor
@@ -74,6 +86,28 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
         source.action = #selector(changeSource)
         source.setAccessibilityLabel("Speech recognition source")
         configure(prepareButton, action: #selector(prepareModel))
+        partialField.placeholderString = "Provisional words"
+        partialField.setAccessibilityLabel("Injected provisional text")
+        let inject = NSButton(title: "Inject snapshot", target: self, action: #selector(injectSnapshot))
+        fakeBehavior.addItems(withTitles: FakeOpenAI.Behavior.allCases.map(\.rawValue))
+        fakeBehavior.target = self; fakeBehavior.action = #selector(changeFakeBehavior)
+        fakeBehavior.setAccessibilityLabel("Fake HTTP response")
+        let release = NSButton(title: "Release HTTP replies", target: self, action: #selector(releaseRequests))
+        fault.addItems(withTitles: ["No input fault", "Hold preparation", "Fail preparation", "Fail stream", "Fail Stop", "Fail Cancel"])
+        fault.target = self; fault.action = #selector(changeInputFault)
+        fault.setAccessibilityLabel("Input fault")
+        let releaseStart = NSButton(title: "Release preparation", target: self, action: #selector(releasePreparation))
+        let inspect = NSButton(title: "Inspect payload", target: self, action: #selector(inspectPayload))
+        let target = NSButton(title: "Show paste target", target: self, action: #selector(showPasteTarget))
+        let state = NSButton(title: "Inspect state", target: self, action: #selector(inspectState))
+        historyPicker.setAccessibilityLabel("Saved recording")
+        let transcribe = NSButton(title: "Transcribe / Retry", target: self, action: #selector(transcribeHistory))
+        let cancelHistory = NSButton(title: "Cancel upload", target: self, action: #selector(cancelHistory))
+        let copyHistory = NSButton(title: "Copy saved transcript", target: self, action: #selector(copyHistory))
+        let settings = NSButton(title: "Sentence cleanup…", target: self, action: #selector(showSettings))
+        for button in [inject, release, releaseStart, inspect, target, state, transcribe, cancelHistory, copyHistory, settings] { button.bezelStyle = .rounded }
+        harnessStatus.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
+        harnessStatus.setAccessibilityLabel("Harness connection")
         let replayButton = NSButton(title: "Replay audio…", target: self, action: #selector(replayAudio))
         replayButton.bezelStyle = .rounded
         let keyButton = NSButton(title: "Set API key…", target: self, action: #selector(setAPIKey))
@@ -111,10 +145,17 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
             description,
             row([source, prepareButton]),
             row([backend, keyButton]),
+            row([fakeBehavior, release, inspect]),
+            row([fault, releaseStart]),
             scrollView,
+            row([partialField, inject]),
             row([startButton, stopButton, cancelButton]),
             row([streamButton, sampleButton, replayButton]),
             status,
+            row([target, state]),
+            row([historyPicker, settings]),
+            row([transcribe, cancelHistory, copyHistory]),
+            harnessStatus,
             row([requestStatus, clearButton]),
             logScroll
         ])
@@ -128,14 +169,15 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
             controls.trailingAnchor.constraint(equalTo: panel.contentView!.trailingAnchor, constant: -20),
             controls.topAnchor.constraint(equalTo: panel.contentView!.topAnchor, constant: 20),
             controls.bottomAnchor.constraint(equalTo: panel.contentView!.bottomAnchor, constant: -20),
-            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 140),
-            logScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 160)
+            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 100),
+            logScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 120)
         ])
         for view in controls.arrangedSubviews {
             view.widthAnchor.constraint(equalTo: controls.widthAnchor).isActive = true
         }
 
-        controller.onStateChange = { [weak self] in self?.updateControls() }
+        let onStateChange = controller.onStateChange
+        controller.onStateChange = { [weak self] in onStateChange?(); self?.updateControls() }
         corrector.onDiagnosticsChange = { [weak self] in self?.updateDiagnostics() }
         input.local.onDiagnostic = { [weak self] message in
             self?.recognitionLog += message + "\n"
@@ -151,6 +193,10 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func renderDebugView(to url: URL) throws {
+        try DebugViewRendering.writePNG(of: window!.contentView!, background: window!.backgroundColor, to: url)
+    }
 
     func show() {
         showWindow(nil)
@@ -186,10 +232,30 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
     }
 
     private func updateControls() {
+        source.selectItem(at: input.source.rawValue)
+        backend.selectItem(at: corrector.backend.rawValue)
+        let faults = input.injected
+        fault.selectItem(at: faults.holdPreparation ? 1 : faults.failStart ? 2 : faults.failStop ? 4 : faults.failCancel ? 5 : 0)
+        if let harness {
+            harnessStatus.stringValue = "Isolated data: \(harness.store.appDirectory.path)\nControl file: \(DebugEnvironment.controlFile.path)"
+            do {
+                let recordings = try harness.store.load()
+                let selection = historyPicker.indexOfSelectedItem
+                let selected = historyIDs.indices.contains(selection) ? historyIDs[selection] : nil
+                historyIDs = recordings.map(\.id)
+                historyPicker.removeAllItems()
+                historyPicker.addItems(withTitles: recordings.map { "\($0.id.uuidString.prefix(8)) · \($0.transcriptionError == nil ? "saved" : "error")" })
+                if let selected, let index = historyIDs.firstIndex(of: selected) { historyPicker.selectItem(at: index) }
+            } catch { harnessStatus.stringValue = "Storage error: \(error.localizedDescription)" }
+            Task { [weak self] in
+                let behavior = await harness.fake.currentBehavior()
+                self?.fakeBehavior.selectItem(at: FakeOpenAI.Behavior.allCases.firstIndex(of: behavior)!)
+            }
+        }
         backend.isEnabled = !controller.isActive
         source.isEnabled = !controller.isActive
         prepareButton.isEnabled = !controller.isActive && !preparingModel
-        textView.isEditable = input.source == .typed
+        textView.isEditable = input.source == .typed || input.source == .injected
         streamButton.isEnabled = input.source == .typed
         startButton.isEnabled = !controller.isActive && (input.source != .audioFile || input.audioFile.audioURL != nil)
         stopButton.isEnabled = controller.isActive
@@ -217,6 +283,64 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
     @objc private func changeSource() {
         input.source = DebugDictationInputService.Source(rawValue: source.indexOfSelectedItem)!
         updateControls()
+    }
+
+    @objc private func injectSnapshot() {
+        do { try input.injected.inject(.init(committedText: textView.string, partialText: partialField.stringValue)) }
+        catch { corrector.log(error.localizedDescription) }
+    }
+
+    @objc private func changeFakeBehavior() {
+        let behavior = FakeOpenAI.Behavior.allCases[fakeBehavior.indexOfSelectedItem]
+        Task { await harness?.fake.configure(behavior: behavior) }
+    }
+
+    @objc private func releaseRequests() { Task { await harness?.fake.release() } }
+    @objc private func releasePreparation() { Task { await input.injected.releasePreparation() } }
+
+    @objc private func changeInputFault() {
+        let selected = fault.indexOfSelectedItem
+        input.injected.holdPreparation = selected == 1
+        input.injected.failStart = selected == 2
+        input.injected.failStop = selected == 4
+        input.injected.failCancel = selected == 5
+        if selected == 3 {
+            do { try input.injected.injectFailure() } catch { corrector.log(error.localizedDescription) }
+        }
+    }
+
+    @objc private func inspectPayload() {
+        Task {
+            if let receipt = await harness?.fake.receipts.last {
+                corrector.log(receipt.payload ?? "Audio upload: \(receipt.audioBytes ?? 0) bytes; SHA256 \(receipt.audioSHA256 ?? "")")
+            } else { corrector.log("No HTTP requests yet") }
+        }
+    }
+
+    @objc private func showPasteTarget() { harness?.pasteTarget.show() }
+
+    private func historyAction(_ action: DebugHarness.Command.Action) {
+        let index = historyPicker.indexOfSelectedItem
+        guard let harness, historyIDs.indices.contains(index) else { corrector.log("Save a recording first"); return }
+        let data = try! JSONEncoder().encode(["action": action.rawValue, "recordingID": historyIDs[index].uuidString])
+        Task {
+            do { try await harness.execute(JSONDecoder().decode(DebugHarness.Command.self, from: data)) }
+            catch { corrector.log(error.localizedDescription) }
+        }
+    }
+    @objc private func transcribeHistory() { historyAction(.retryTranscription) }
+    @objc private func cancelHistory() { historyAction(.cancelTranscription) }
+    @objc private func copyHistory() { historyAction(.copyRecording) }
+    @objc private func showSettings() {
+        do { _ = try harness?.uiWindow?("settings", true) } catch { corrector.log(error.localizedDescription) }
+    }
+
+    @objc private func inspectState() {
+        Task {
+            guard let harness else { return }
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            corrector.log(String(decoding: try! encoder.encode(await harness.snapshot()), as: UTF8.self))
+        }
     }
 
     @objc private func prepareModel() {

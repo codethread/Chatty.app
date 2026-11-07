@@ -1,11 +1,19 @@
 import Foundation
 
-struct OpenAITranscriber {
-    func transcribe(file: URL, prompt: String?) async throws -> String {
-        let apiKey = KeychainStore.readAPIKey().trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !apiKey.isEmpty else { throw TranscriptionError.missingAPIKey }
+struct OpenAITranscriber: Sendable {
+    private let credentials: OpenAICredentials
+    private let endpoint: URL
 
-        var request = URLRequest(url: URL(string: "https://api.openai.com/v1/audio/transcriptions")!)
+    init(credentials: OpenAICredentials = OpenAICredentials(),
+         endpoint: URL = URL(string: "https://api.openai.com/v1/audio/transcriptions")!) {
+        self.credentials = credentials
+        self.endpoint = endpoint
+    }
+
+    func transcribe(file: URL, prompt: String?) async throws -> String {
+        let apiKey = try await credentials.load()
+
+        var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
@@ -15,37 +23,17 @@ struct OpenAITranscriber {
 
         let session = URLSession(configuration: .ephemeral)
         defer { session.finishTasksAndInvalidate() }
-        let (data, response) = try await data(for: request, session: session)
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw TranscriptionError.badResponse }
         guard (200..<300).contains(http.statusCode) else {
-            let body = String(data: data, encoding: .utf8) ?? ""
+            let body = (String(data: data, encoding: .utf8) ?? "")
+                .replacingOccurrences(of: #"\bsk-[A-Za-z0-9_*.-]+"#, with: "[redacted]", options: .regularExpression)
             throw TranscriptionError.api("OpenAI returned \(http.statusCode): \(body)")
         }
         let decoded = try JSONDecoder().decode(TranscriptionResponse.self, from: data)
-        return decoded.text.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func data(for request: URLRequest, session: URLSession) async throws -> (Data, URLResponse) {
-        try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                let task = session.dataTask(with: request) { data, response, error in
-                    if let error {
-                        continuation.resume(throwing: error)
-                        return
-                    }
-
-                    guard let data, let response else {
-                        continuation.resume(throwing: TranscriptionError.badResponse)
-                        return
-                    }
-
-                    continuation.resume(returning: (data, response))
-                }
-                task.resume()
-            }
-        } onCancel: {
-            session.invalidateAndCancel()
-        }
+        let text = decoded.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { throw TranscriptionError.badResponse }
+        return text
     }
 
     private func multipartBody(file: URL, prompt: String?, boundary: String) throws -> Data {

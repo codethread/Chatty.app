@@ -2,7 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 
 /// A user-chosen global keychord (e.g. ⌘⌃0), persisted in config.
-struct KeyBinding: Codable, Equatable {
+struct KeyBinding: Codable, Equatable, Sendable {
     let keyCode: UInt32
     let carbonModifiers: UInt32
     /// Human-readable rendering shown in the menu, captured when the chord is set.
@@ -54,7 +54,7 @@ struct KeyBinding: Codable, Equatable {
     ]
 }
 
-struct AppConfig: Codable, Equatable {
+struct AppConfig: Codable, Equatable, Sendable {
     var recordingShortcut: KeyBinding?
     /// Optional free-form context sent as the Transcriptions API `prompt` field.
     var transcriptionPrompt: String?
@@ -65,7 +65,13 @@ struct AppConfig: Codable, Equatable {
 
 /// Persists app configuration as JSON alongside the recordings metadata.
 final class ConfigStore {
-    private static let url = RecordingStore.appDirectory.appendingPathComponent("config.json")
+    private let directory: URL
+    private let url: URL
+
+    init(directory: URL = RecordingStore.defaultDirectory) {
+        self.directory = directory
+        url = directory.appendingPathComponent("config.json")
+    }
 
     private let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
@@ -74,8 +80,8 @@ final class ConfigStore {
     }()
 
     func load() throws -> AppConfig {
-        guard FileManager.default.fileExists(atPath: Self.url.path) else { return AppConfig() }
-        return try JSONDecoder().decode(AppConfig.self, from: Data(contentsOf: Self.url))
+        guard FileManager.default.fileExists(atPath: url.path) else { return AppConfig() }
+        return try JSONDecoder().decode(AppConfig.self, from: Data(contentsOf: url))
     }
 
     @discardableResult
@@ -103,8 +109,8 @@ final class ConfigStore {
     }
 
     private func save(_ config: AppConfig) throws {
-        try FileManager.default.createDirectory(at: RecordingStore.appDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let data = try encoder.encode(config)
-        try data.write(to: Self.url, options: .atomic)
+        try data.write(to: url, options: .atomic)
     }
 }

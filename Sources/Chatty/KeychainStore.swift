@@ -25,17 +25,6 @@ enum KeychainStore {
         return key
     }
 
-    static func readAPIKey() -> String {
-        var query = baseQuery()
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess, let data = item as? Data else { return "" }
-        return String(data: data, encoding: .utf8) ?? ""
-    }
-
     static func saveAPIKey(_ key: String) throws {
         let data = Data(key.utf8)
         let query = baseQuery()
