@@ -16,6 +16,13 @@ enum DebugEnvironment {
         return RecordingStore.defaultDirectory.deletingLastPathComponent()
             .appendingPathComponent("Chatty Debug", isDirectory: true)
     }()
+    static let modelRoot: URL = {
+        if let path = ProcessInfo.processInfo.environment["CHATTY_DEBUG_MODEL_DIRECTORY"] {
+            precondition(path.hasPrefix("/"), "CHATTY_DEBUG_MODEL_DIRECTORY must be absolute")
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        return LocalSpeechRecognizer.defaultModelRoot
+    }()
     static let controlFile: URL = {
         if let path = ProcessInfo.processInfo.environment["CHATTY_DEBUG_CONTROL_FILE"] {
             precondition(path.hasPrefix("/"), "CHATTY_DEBUG_CONTROL_FILE must be absolute")
@@ -54,6 +61,9 @@ final class DebugHarness {
         let globalShortcuts: Bool
         let history: [String: RecordingTranscriptionController.State]
         let platform: [String: String]
+        let speechEngine: SpeechRecognitionEngine
+        let model: LocalSpeechRecognizer.ModelState
+        let recognitionEngine: SpeechRecognitionEngine?
         let systemPasteTarget: String?
         let clipboardNeedsRestore: Bool
         let clipboardRestored: Bool
@@ -66,6 +76,8 @@ final class DebugHarness {
         var recordingCount: Int?
         var historyID: UUID?
         var historyPhase: RecordingTranscriptionController.State.Phase?
+        var modelPhase: LocalSpeechRecognizer.ModelState.Phase?
+        var timeoutSeconds: Int?
     }
     struct Command: Decodable {
         enum Action: String, Decodable {
@@ -123,6 +135,7 @@ final class DebugHarness {
     let pasteboard = NSPasteboard.withUniqueName()
     let pasteTarget = DebugPasteTarget()
     let systemPaste = DebugSystemPaste()
+    let recognizer: LocalSpeechRecognizer
     var onSettings: ((AppConfig) -> Void)?
     var onReset: (() -> Void)?
     var onGlobalShortcuts: ((Bool) -> Void)?
@@ -136,10 +149,11 @@ final class DebugHarness {
 
     init(input: DebugDictationInputService, corrector: DebugTranscriptCorrector, controller: DictationController,
          fake: FakeOpenAI, store: RecordingStore, configStore: ConfigStore,
-         corrections: CorrectionController, overlay: OverlayWindowController, history: RecordingTranscriptionController) {
+         corrections: CorrectionController, overlay: OverlayWindowController, history: RecordingTranscriptionController, recognizer: LocalSpeechRecognizer) {
         self.input = input; self.corrector = corrector; self.controller = controller; self.fake = fake
         self.store = store; self.configStore = configStore; self.corrections = corrections; self.overlay = overlay
         self.history = history
+        self.recognizer = recognizer
     }
 
     func start() async throws {
@@ -152,6 +166,8 @@ final class DebugHarness {
         try FileManager.default.createDirectory(at: DebugEnvironment.controlFile.deletingLastPathComponent(), withIntermediateDirectories: true)
         try JSONEncoder().encode(connection).write(to: DebugEnvironment.controlFile, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: DebugEnvironment.controlFile.path)
+        let modelChanges = await recognizer.changes()
+        eventTasks.append(Task { [weak self] in for await _ in modelChanges { self?.changed() } })
         let coreChanges = controller.changes()
         let apiChanges = await fake.changes()
         let historyChanges = history.changes()
@@ -187,7 +203,8 @@ final class DebugHarness {
                         requestCount: await fake.receipts.count, settings: corrections.settings, directory: store.appDirectory,
                         globalShortcuts: globalShortcuts,
                         history: Dictionary(uniqueKeysWithValues: history.states.map { ($0.key.uuidString, $0.value) }),
-                        platform: platformState?() ?? [:],
+                        platform: platformState?() ?? [:], speechEngine: input.configured.backend, model: await recognizer.modelState(),
+                        recognitionEngine: input.source == .audioFile ? input.audioFile.recognitionEngine : input.configured.recognitionEngine,
                         systemPasteTarget: systemPaste.targetID, clipboardNeedsRestore: systemPaste.needsRestore,
                         clipboardRestored: systemPaste.restoredClipboard)
     }
@@ -311,7 +328,7 @@ final class DebugHarness {
             case "panel":
                 guard let renderPanel else { throw DebugInputError.injected("The panel is not ready to render") }
                 try renderPanel(url)
-            case "settings", "paste", "shortcut":
+            case "settings", "paste", "shortcut", "speech":
                 guard let uiWindow else { throw DebugInputError.injected("UI is not ready") }
                 let window = try uiWindow(name, false)
                 try DebugViewRendering.writePNG(of: window.contentView!, background: window.backgroundColor, to: url)
@@ -366,10 +383,12 @@ final class DebugHarness {
     }
 
     private func wait(for condition: Condition) async throws -> Snapshot {
-        try await withThrowingTaskGroup(of: Snapshot.self) { group in
+        let seconds = condition.timeoutSeconds ?? 15
+        guard (1...900).contains(seconds) else { throw DebugInputError.injected("Wait timeout must be 1–900 seconds") }
+        return try await withThrowingTaskGroup(of: Snapshot.self) { group in
             group.addTask { try await self.observe(condition) }
             group.addTask {
-                try await Task.sleep(for: .seconds(15))
+                try await Task.sleep(for: .seconds(seconds))
                 throw DebugInputError.injected("Timed out waiting for harness state")
             }
             defer { group.cancelAll() }
@@ -386,7 +405,8 @@ final class DebugHarness {
                (condition.corrected == nil || state.corrected == condition.corrected) &&
                (condition.requestCount == nil || state.requestCount >= condition.requestCount!) &&
                (condition.recordingCount == nil || state.recordingCount == condition.recordingCount) &&
-               (condition.historyID == nil || state.history[condition.historyID!.uuidString]?.phase == condition.historyPhase) { return state }
+               (condition.historyID == nil || state.history[condition.historyID!.uuidString]?.phase == condition.historyPhase) &&
+               (condition.modelPhase == nil || state.model.phase == condition.modelPhase) { return state }
         }
         throw CancellationError()
     }

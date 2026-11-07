@@ -93,7 +93,7 @@ reports that the clipboard changed.
 
 ## Evidence and limits
 
-The 27 AppKit-process scenarios and focused Swift tests cover the following
+The 29 AppKit-process scenarios and focused Swift tests cover the following
 boundaries. The JSON report records each scenario's evidence or failure state.
 
 | Surface | Verification |
@@ -103,7 +103,7 @@ boundaries. The JSON report records each scenario's evidence or failure state.
 | Saved audio HTTP | Real playable AAC multipart upload, exact bytes and SHA256, vocabulary, saved transcript/error, retry, clear error, copy and cancellation. |
 | Concurrent presentation | Background uploads still persist, but cannot replace/close live dictation or steal its clipboard. Delayed dismissal uses an operation-scoped overlay lease. |
 | Overlay | Actual text storage, UTF-16 color spans, live/queued/corrected state, Unicode, five-line height cap, bottom scrolling, processing/error controls and PNG renders. |
-| Settings | Actual window Save, validation, Cancel and Reset-then-Save actions, config reload, and settings in the posted API payload. |
+| Settings | Actual speech-engine window defaults, download/load, Save, Cancel, persisted selection and switching both recognizers; cleanup window Save, validation, Cancel and Reset-then-Save actions, config reload, and settings in the posted API payload. |
 | Persistence | Fresh store reload, retention, corrupt/unwritable storage, audio preserved on failure and restart after repair. |
 | Credentials | Injected asynchronous Keychain loader: shared reads, caller cancellation, cache, replacement and failure/retry. No test writes a real API key. |
 | Shortcuts | Modifier parsing and double-left-Shift timing with NSEvents; actual shortcut capture, reject bare letter, cancel, Carbon registration/unregistration, event dispatch and Escape lifecycle in the app. |
@@ -111,7 +111,7 @@ boundaries. The JSON report records each scenario's evidence or failure state.
 | Recognition integration | Clock-paced speech fixture through that processor, model, pause punctuation, HTTP cleanup, recording history, copy and AppKit paste. Cancel/restart, early Stop, silence and missing file. |
 | Build/distribution | Ordinary Swift build, debug test build, production release archive, code signing/verification and a separately signed runnable harness bundle. |
 
-On 2026-11-07 the 27 process scenarios passed. Targeted Swift logic checks also
+On 2026-11-07 the 29 process scenarios passed. Targeted Swift logic checks also
 passed. After unlocking, native UI operation verified panel Start/Inject/Stop,
 settings validation/Cancel and the private paste destination. The speech fixture
 then traversed capture conversion, local recognition, HTTP cleanup, AAC/history
@@ -130,3 +130,16 @@ wire/lifecycle behavior; real OpenAI output, authentication, latency and Keychai
 trust dialogs remain external checks for the later token. Apple recognition
 accuracy, optional Pi service output and noisy-environment accuracy are not
 established by the deterministic local-model fixture.
+
+## Production speech settings acceptance
+
+`verify-debug.py --launch --audio` includes the real speech settings window:
+Apple default, Cancel preserving the selection, actual model preparation, Save
+and reload, Nemotron replay through the shared production recognizer, and switch
+back to Apple with recording/paste verification. `--cold-model` gives the launched
+app an empty model cache and exercises the actual download and missing-model
+validation. It can download approximately 626 MB. Model waits observe state and
+have an explicit 900-second deadline. The ordinary suite uses the shared cache.
+
+See [macOS I/O testing research](macos-io-testing.md) for the proposed virtual-input
+and XCUITest lane that would additionally cross the real microphone input tap.

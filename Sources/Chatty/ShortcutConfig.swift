@@ -59,6 +59,8 @@ struct AppConfig: Codable, Equatable, Sendable {
     /// Optional free-form context sent as the Transcriptions API `prompt` field.
     var transcriptionPrompt: String?
     var correctionSettings: CorrectionSettings?
+    var speechRecognition: SpeechRecognitionEngine?
+    var effectiveSpeechRecognition: SpeechRecognitionEngine { speechRecognition ?? .apple }
 
     var effectiveCorrectionSettings: CorrectionSettings { correctionSettings ?? .default }
 }
@@ -104,6 +106,14 @@ final class ConfigStore {
     func setCorrectionSettings(_ settings: CorrectionSettings) throws -> AppConfig {
         var config = try load()
         config.correctionSettings = settings
+        try save(config)
+        return config
+    }
+
+    @discardableResult
+    func setSpeechRecognition(_ engine: SpeechRecognitionEngine) throws -> AppConfig {
+        var config = try load()
+        config.speechRecognition = engine
         try save(config)
         return config
     }

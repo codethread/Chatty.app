@@ -24,13 +24,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var presentation = OverlayPresentation(overlay)
     private let openAICredentials = OpenAICredentials()
     #if CHATTY_DEBUG_PANEL
-    private let input = DebugDictationInputService()
+    private let localRecognizer = LocalSpeechRecognizer(modelRoot: DebugEnvironment.modelRoot)
+    #else
+    private let localRecognizer = LocalSpeechRecognizer()
+    #endif
+    #if CHATTY_DEBUG_PANEL
+    private lazy var input = DebugDictationInputService(recognizer: localRecognizer)
     private lazy var debugCorrector = DebugTranscriptCorrector(credentials: openAICredentials)
     private lazy var corrections = CorrectionController(corrector: debugCorrector)
     private lazy var debugPanel = DebugPanelController(input: input, controller: dictation, corrector: debugCorrector,
                                                       onSetAPIKey: { [weak self] in self?.setAPIKey() })
     #else
-    private let input = MicrophoneDictationService()
+    private lazy var input = MicrophoneDictationService(localRecognizer: localRecognizer)
     private lazy var corrections = CorrectionController(corrector: OpenAITranscriptCorrector(credentials: openAICredentials))
     #endif
     private lazy var dictation = DictationController(input: input, corrections: corrections, overlay: presentation.session(for: .dictation), recordings: store)
@@ -40,6 +45,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         corrections.settings = settings
         refreshMenu()
     }
+    private lazy var speechSettingsWindow = SpeechSettingsWindowController(recognizer: localRecognizer) { [unowned self] engine in
+        config = try configStore.setSpeechRecognition(engine)
+        applySpeechEngine()
+        refreshMenu()
+    }
+    private func applySpeechEngine() {
+        #if CHATTY_DEBUG_PANEL
+        input.setEngine(config.effectiveSpeechRecognition)
+        #else
+        input.backend = config.effectiveSpeechRecognition
+        #endif
+    }
+    @objc private func editSpeechRecognition() {
+        speechSettingsWindow.show(engine: config.effectiveSpeechRecognition)
+    }
+
     private lazy var history = RecordingTranscriptionController(store: store, presentation: presentation) { [credentials = openAICredentials] file, prompt in
         try await OpenAITranscriber(credentials: credentials).transcribe(file: file, prompt: prompt)
     }
@@ -65,12 +86,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 configureApplication()
                 let harness = DebugHarness(input: input, corrector: debugCorrector, controller: dictation,
                                            fake: fakeAPI, store: store, configStore: configStore,
-                                           corrections: corrections, overlay: overlay, history: history)
+                                           corrections: corrections, overlay: overlay, history: history, recognizer: localRecognizer)
                 self.harness = harness
                 harness.renderPanel = { [unowned self] url in try debugPanel.renderDebugView(to: url) }
                 harness.uiWindow = { [unowned self] name, show in
                     switch name {
                     case "panel": if show { debugPanel.show() }; return debugPanel.window!
+                    case "speech":
+                        if show { speechSettingsWindow.show(engine: config.effectiveSpeechRecognition) }
+                        return speechSettingsWindow.window!
                     case "settings":
                         if show { correctionSettingsWindow.show(settings: config.effectiveCorrectionSettings) }
                         return correctionSettingsWindow.window!
@@ -90,7 +114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 harness.shortcutKey = { [unowned self] code, flags, chars in try shortcutCapture.injectKey(code: code, modifiers: flags, characters: chars) }
                 harness.resetShortcut = { [unowned self] in applyRecordingShortcut(nil) }
-                harness.onSettings = { [weak self] config in self?.config = config; self?.refreshMenu() }
+                harness.onSettings = { [weak self] config in self?.config = config; self?.applySpeechEngine(); self?.refreshMenu() }
                 harness.onReset = { [weak self] in self?.dismissErrorUI(); self?.refreshMenu() }
                 harness.onGlobalShortcuts = { [weak self] enabled in
                     self?.debugGlobalShortcuts = enabled
@@ -139,10 +163,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         corrections.settings = config.effectiveCorrectionSettings
+        applySpeechEngine()
         applyBindings()
         #if CHATTY_DEBUG_PANEL
         let appMenu = NSMenu()
         appMenu.addItem(NSMenuItem(title: "Show Debug Panel…", action: #selector(showDebugPanel), keyEquivalent: "0"))
+        appMenu.addItem(NSMenuItem(title: "Speech Recognition…", action: #selector(editSpeechRecognition), keyEquivalent: ""))
         appMenu.addItem(NSMenuItem(title: "Sentence Cleanup…", action: #selector(editSentenceCleanup), keyEquivalent: ","))
         appMenu.addItem(.separator())
         appMenu.addItem(NSMenuItem(title: "Quit Chatty", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
@@ -185,6 +211,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: appName, action: nil, keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Set OpenAI API Key…", action: #selector(setAPIKey), keyEquivalent: ","))
+        menu.addItem(NSMenuItem(title: "Speech Recognition…", action: #selector(editSpeechRecognition), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Sentence Cleanup…", action: #selector(editSentenceCleanup), keyEquivalent: ""))
         let vocabularyTitle = config.transcriptionPrompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             ? "Edit Transcription Vocabulary…"

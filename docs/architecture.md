@@ -3,7 +3,8 @@
 Chatty is one local Swift/AppKit application. Production runs in the menu bar;
 the debug build opens a floating control window with injected snapshots, local
 Nemotron or Apple microphone recognition, typed input, and local audio replay. All use the same
-dictation and transcript-cleanup pipeline. Production uses Apple recognition.
+dictation and transcript-cleanup pipeline. Production defaults to Apple recognition;
+Speech Recognition settings can select the fixed Nemotron 600M English model.
 
 ## C1 — System context
 
@@ -75,6 +76,9 @@ flowchart TD
   credentials["OpenAICredentials — asynchronous loading and in-memory cache"]
   overlay["OverlayWindowController and RecordingWaveformView"]
   storage["RecordingStore and ConfigStore"]
+  recognition["SpeechRecognitionSession — Apple or Nemotron stream"]
+  localmodel["LocalSpeechRecognizer — model preparation and inference"]
+  speechsettings["SpeechSettingsWindowController — saved engine and model download"]
   history["RecordingTranscriptionController — saved-audio lifecycle"]
   audioapi["OpenAITranscriber — multipart audio upload"]
   presentation["OverlayPresentation — current operation lease"]
@@ -83,6 +87,11 @@ flowchart TD
   entry --> core
   entry --> storage
   entry --> history
+  entry --> speechsettings
+  speechsettings --> storage
+  speechsettings --> localmodel
+  input --> recognition
+  recognition --> localmodel
   core -- "Starts, stops and consumes events" --> input
   core --> cleanup
   core --> presentation
@@ -106,16 +115,23 @@ flowchart TD
 | --- | --- |
 | Composition and UI | [main.swift](../Sources/Chatty/main.swift) injects services, wires shortcut and overlay actions, settings, clipboard and paste callbacks. [DebugPanelController](../Sources/Chatty/DebugPanelController.swift) drives the same core and exposes request diagnostics. [DebugHarness](../Sources/Chatty/DebugHarness.swift) adds authenticated loopback commands, event-based waits and snapshots; [DebugUI](../Sources/Chatty/DebugUI.swift) operates actual AppKit controls. |
 | Saved recordings | [RecordingTranscriptionController](../Sources/Chatty/RecordingTranscriptionController.swift) owns uploads, cancellation, retry, persistence and copy/paste callbacks. Run IDs reject stale replies; [OverlayPresentation](../Sources/Chatty/OverlayPresentation.swift) leases the overlay to the current operation so older completion/dismissal cannot replace a newer session. |
+| Recognition settings | [SpeechSettingsWindowController](../Sources/Chatty/SpeechSettingsWindowController.swift) selects Apple or Nemotron and shows download/load progress, errors and retry. [ConfigStore](../Sources/Chatty/ShortcutConfig.swift) persists the selection; Apple is the default. The shared local recognizer owns model preparation and publishes state to settings and the harness. Changes apply to the next session. |
 | Session lifecycle | [DictationController](../Sources/Chatty/DictationController.swift) owns preparation, listening, finishing, completion and failure. Session IDs reject stale input after cancel or restart. |
-| Input | [DictationInputService](../Sources/Chatty/DictationInputService.swift) emits transcript snapshots, levels and file size. [MicrophoneDictationService](../Sources/Chatty/MicrophoneDictationService.swift) copies one audio tap into an actor for AAC recording and conversion, feeding either Apple SpeechAnalyzer or [LocalSpeechRecognizer](../Sources/Chatty/LocalSpeechRecognizer.swift). The latter owns a warm FluidAudio/Core ML Nemotron 600M model and consumes 16 kHz mono audio in 560 ms model chunks. [DebugDictationInputService](../Sources/Chatty/DebugDictationInputService.swift) selects injected snapshots, microphone, typed text, or [clock-paced file audio](../Sources/Chatty/DebugAudioReplay.swift). |
+| Input | [DictationInputService](../Sources/Chatty/DictationInputService.swift) emits transcript snapshots, levels and file size. [MicrophoneDictationService](../Sources/Chatty/MicrophoneDictationService.swift) copies one audio tap into an actor for AAC recording and conversion, feeding [SpeechRecognitionSession](../Sources/Chatty/SpeechRecognitionSession.swift), which owns the Apple SpeechAnalyzer or [LocalSpeechRecognizer](../Sources/Chatty/LocalSpeechRecognizer.swift) lifecycle shared by microphone and file replay. The latter owns a warm FluidAudio/Core ML Nemotron 600M model and consumes 16 kHz mono audio in 560 ms model chunks. [DebugDictationInputService](../Sources/Chatty/DebugDictationInputService.swift) selects injected snapshots, microphone, typed text, or [clock-paced file audio](../Sources/Chatty/DebugAudioReplay.swift). |
 | Cleanup | [CorrectionController](../Sources/Chatty/CorrectionController.swift) serializes requests through `TranscriptCorrecting`, coalescing new speech after each reply. [TranscriptCorrections](../Sources/Chatty/TranscriptCorrections.swift) tracks raw recognition separately from corrected text and replaces only the submitted window. [TranscriptLayout](../Sources/Chatty/TranscriptLayout.swift) measures context using the overlay's font and wrapping width. |
 | API boundary | [OpenAITranscriptCorrector](../Sources/Chatty/OpenAITranscriptCorrector.swift) reuses a URLSession, validates responses and cancels individual requests. [OpenAICredentials](../Sources/Chatty/OpenAICredentials.swift) shares a background Keychain read and caches the key; callers can cancel their wait. [DebugTranscriptCorrector](../Sources/Chatty/DebugTranscriptCorrector.swift) selects REST, fake or Pi and reports timings. [FakeOpenAI](../Sources/Chatty/FakeOpenAI.swift) receives the actual serialized JSON/multipart bytes over loopback HTTP, returns SCREAMING_SNAKE_CASE and injects response failures or held replies. |
 | Presentation and persistence | [OverlayWindowController](../Sources/Chatty/OverlayWindowController.swift) displays live, pending and corrected text in a growing five-line viewport. [RecordingStore](../Sources/Chatty/RecordingStore.swift) saves recordings and transcripts; [ConfigStore](../Sources/Chatty/ShortcutConfig.swift) saves shortcuts and cleanup settings. [OpenAITranscriber](../Sources/Chatty/OpenAITranscriber.swift) handles saved-audio uploads. |
 
 ## Runtime contracts
 
-- Local model preparation downloads weights once into FluidAudio's Application
-  Support cache and loads them off the main actor. The demo's microphone and
+- Apple is the default recognition engine. The user explicitly downloads the
+  fixed English Nemotron 600M 560 ms model in Speech Recognition settings
+  (approximately 626 MB), then saves that selection. Preparation publishes
+  download/load progress and errors; failed preparation can be retried.
+  Missing weights are reported with instructions to download in settings,
+  rather than downloading a large model when recording starts.
+  Model preparation uses FluidAudio's Application Support cache and runs off the
+  main actor. Weights stay warm for later sessions in this app process. The demo's microphone and
   file sources share that recognizer and the audio conversion/AAC recording
   processor. Stereo inputs downmix before mono analysis and recording. Sessions
   reset encoder/decoder state while

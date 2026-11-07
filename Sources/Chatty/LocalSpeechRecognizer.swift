@@ -7,25 +7,88 @@ import Speech
 /// A warm, cache-aware 600M model. Each session resets decoder state, not weights.
 actor LocalSpeechRecognizer {
     private let manager: StreamingNemotronAsrManager
+    struct ModelState: Codable, Equatable, Sendable {
+        enum Phase: String, Codable { case notDownloaded, downloaded, preparing, ready, failed }
+        let phase: Phase
+        let message: String
+        let progress: Double?
+    }
+    nonisolated static let defaultModelRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        .appendingPathComponent("FluidAudio/Models", isDirectory: true)
+    private let modelRoot: URL
     private var preparation: Task<Void, Error>?
+    private var preparationID: UUID?
+    private var observers: [UUID: AsyncStream<ModelState>.Continuation] = [:]
+    private var state: ModelState
 
-    init() {
+    init(modelRoot: URL = LocalSpeechRecognizer.defaultModelRoot) {
+        self.modelRoot = modelRoot
+        let downloaded = Self.isDownloaded(at: modelRoot)
+        state = ModelState(phase: downloaded ? .downloaded : .notDownloaded,
+                           message: downloaded ? "Model downloaded · ready to load" : "Model not downloaded · approximately 626 MB", progress: nil)
         let configuration = MLModelConfiguration()
         configuration.computeUnits = .cpuAndNeuralEngine
         manager = StreamingNemotronAsrManager(configuration: configuration, requestedChunkSize: .ms560)
     }
 
-    func prepare() async throws {
+    nonisolated private static func isDownloaded(at root: URL) -> Bool {
+        let directory = root.appendingPathComponent(NemotronChunkSize.ms560.repo.folderName)
+        return ["encoder/encoder_int8.mlmodelc/coremldata.bin", "decoder.mlmodelc/coremldata.bin",
+                "joint.mlmodelc/coremldata.bin", "tokenizer.json"].allSatisfy {
+            FileManager.default.fileExists(atPath: directory.appendingPathComponent($0).path)
+        }
+    }
+
+    func modelState() -> ModelState { state }
+    func changes() -> AsyncStream<ModelState> {
+        let id = UUID()
+        return AsyncStream { continuation in
+            observers[id] = continuation; continuation.yield(state)
+            continuation.onTermination = { @Sendable [weak self] _ in Task { await self?.removeObserver(id) } }
+        }
+    }
+    private func removeObserver(_ id: UUID) { observers.removeValue(forKey: id) }
+    private func publish(_ state: ModelState) {
+        self.state = state
+        for observer in observers.values { observer.yield(state) }
+    }
+
+    func prepare(allowDownload: Bool = false) async throws {
         if let preparation { return try await preparation.value }
+        guard allowDownload || Self.isDownloaded(at: modelRoot) else {
+            throw LocalModelError.notDownloaded
+        }
+        let id = UUID()
+        preparationID = id
+        defer { preparationID = nil }
+        publish(ModelState(phase: .preparing, message: Self.isDownloaded(at: modelRoot) ? "Loading local model…" : "Downloading local model…", progress: nil))
         let manager = manager
-        let task = Task { try await manager.loadModels() }
+        let root = modelRoot
+        let task = Task {
+            try await manager.loadModels(to: root, progressHandler: { [weak self] progress in
+                Task { await self?.downloadProgress(progress, id: id) }
+            })
+        }
         preparation = task
         do {
             try await task.value
+            publish(ModelState(phase: .ready, message: "Nemotron 600M ready · English · 560 ms streaming", progress: 1))
         } catch {
             preparation = nil
+            publish(ModelState(phase: .failed, message: error.localizedDescription, progress: nil))
             throw error
         }
+    }
+
+    private func downloadProgress(_ progress: DownloadProgress, id: UUID) {
+        guard preparationID == id else { return }
+        let message: String
+        switch progress.phase {
+        case .listing: message = "Finding model files…"
+        case .downloading(let completed, let total): message = "Downloading model · \(completed)/\(total) files"
+        case .compiling(let name): message = "Preparing \(name)…"
+        }
+        publish(ModelState(phase: .preparing, message: message, progress: progress.fractionCompleted))
     }
 
     func run(
@@ -84,4 +147,9 @@ actor LocalSpeechRecognizer {
         }
         return sqrt(sum / Float(Int(buffer.frameLength) * Int(buffer.format.channelCount)))
     }
+}
+
+private enum LocalModelError: LocalizedError {
+    case notDownloaded
+    var errorDescription: String? { "Download the local model in Speech Recognition settings before using Nemotron." }
 }

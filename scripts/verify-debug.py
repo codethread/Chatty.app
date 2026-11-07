@@ -331,6 +331,35 @@ def verify(client, with_audio=False):
         require(connection.startswith("Isolated data:"), "Panel kept a stale storage error after repair")
         return {"visibleFailure": True, "audioPreserved": True, "restartAfterRepair": True}
 
+    def speech_settings():
+        require(client.state()["speechEngine"] == "apple", "Fresh settings did not default to Apple")
+        client.command("ui", view="speech", show=True)
+        client.command("ui", view="speech", control="Speech recognition engine", value="Nemotron 600M · local streaming")
+        client.command("ui", view="speech", control="Cancel", click=True)
+        require(client.state()["speechEngine"] == "apple", "Cancel changed the recognizer")
+        client.command("ui", view="speech", show=True)
+        if client.state()["model"]["phase"] == "notDownloaded":
+            client.command("ui", view="speech", control="Speech recognition engine", value="Nemotron 600M · local streaming")
+            client.command("ui", view="speech", control="Save", click=True)
+            require(client.request("/ui/speech")["visible"], "Missing model was accepted without download")
+        phase = client.state()["model"]["phase"]
+        if phase not in ["ready", "preparing"]:
+            client.command("ui", view="speech", control="Download local model", click=True)
+        if phase != "ready":
+            client.wait(modelPhase="ready", timeoutSeconds=900)
+        client.command("ui", view="speech", control="Speech recognition engine", value="Nemotron 600M · local streaming")
+        client.command("ui", view="speech", control="Save", click=True)
+        require(client.state()["speechEngine"] == "nemotron", "Save did not switch the configured recognizer")
+        client.command("ui", view="speech", show=True)
+        form = client.request("/ui/speech")
+        selected = next(e["value"] for e in form["controls"] if e["label"] == "Speech recognition engine")
+        require(selected == "Nemotron 600M · local streaming", "Settings did not reload saved choice")
+        client.command("ui", view="speech", control="Cancel", click=True)
+        from urllib.parse import urlparse, unquote
+        config = json.loads((Path(unquote(urlparse(client.state()["directory"]).path)) / "config.json").read_text())
+        require(config["speechRecognition"] == "nemotron", "Recognizer choice was not persisted to disk")
+        return {"appleDefault": True, "cancel": True, "loadActualModel": True, "savedAndReloaded": True}
+
     run("stream-queue-stop-persist-paste", held_cleanup)
     run("cancel-late-reply-restart", cancelled_reply)
     run("cancel-preparation-restart", preparing_cancel)
@@ -347,12 +376,14 @@ def verify(client, with_audio=False):
     run("long-unicode-overlay", long_overlay)
     run("persistence-corruption-audio-preservation-repair", persistence_failure)
     if with_audio:
+        run("production-speech-settings-default-download-save-cancel", speech_settings)
         def audio_pipeline():
             fixture = Path(__file__).resolve().parent.parent / "Tests/Fixtures/statements-with-pauses.wav"
             client.command("replayAudio", audioPath=str(fixture))
             client.wait(phase="listening")
             completed = client.wait(phase="complete")
             expected = "THIS_IS_A_STATEMENT_WITHOUT_A_QUESTION_NOW_I_AM_STARTING_ANOTHER_TOPIC"
+            require(completed["recognitionEngine"] == "nemotron", "Replay did not use the configured local recognizer")
             require(completed["completed"] == [expected], "Audio words were lost or changed across the pause")
             require(completed["pasteTarget"] == expected, "Recognized audio did not reach the paste target")
             require(completed["recordingCount"] == 1, "Replayed audio was not saved through the real recording path")
@@ -400,16 +431,38 @@ def verify(client, with_audio=False):
             require(failed["recordingCount"] == 0 and not failed["completed"], "Missing source created a recording or pasted")
             return {"failure": failed["failure"]}
         run("real-audio-source-failure", missing_audio)
+        def apple_switch_replay():
+            fixture = Path(__file__).resolve().parent.parent / "Tests/Fixtures/statements-with-pauses.wav"
+            client.command("replayAudio", audioPath=str(fixture))
+            client.wait(phase="listening")
+            client.command("ui", view="speech", show=True)
+            client.command("ui", view="speech", control="Speech recognition engine", value="Apple · built in")
+            client.command("ui", view="speech", control="Save", click=True)
+            previous = client.wait(phase="complete")
+            require(previous["recognitionEngine"] == "nemotron", "Changing settings replaced an active recognition session")
+            require(previous["speechEngine"] == "apple", "Settings did not save the next session's engine")
+            client.command("reset", clearData=True)
+            client.command("replayAudio", audioPath=str(fixture))
+            completed = client.wait(phase="complete")
+            require(completed["recognitionEngine"] == "apple", "Switch did not select the production Apple recognizer")
+            require("STATEMENT_WITHOUT_A_QUESTION" in completed["completed"][0], "Apple recognition lost the fixture's first statement")
+            require("STARTING_ANOTHER_TOPIC" in completed["completed"][0], "Apple recognition lost the continuation")
+            require(completed["latestRecording"]["transcript"] == completed["completed"][0], "Apple output did not persist")
+            require(completed["pasteTarget"] == completed["completed"][0], "Apple output did not reach the paste destination")
+            return {"engine": "apple", "completed": completed["completed"][0], "persistedAndPasted": True}
+        run("switch-back-to-production-apple-replay-save-paste", apple_switch_replay)
     client.command("reset", clearData=True)
     return {"passed": all(result["passed"] for result in results), "scenarios": results}
 
 
-def launch_and_verify(root, with_audio, report_path):
+def launch_and_verify(root, with_audio, report_path, cold_model=False, model_cache=None):
     workspace = Path(tempfile.mkdtemp(prefix="verification-", dir=root / "build"))
     bundle = workspace / "Chatty Verification.app"
     subprocess.run([str(root / "scripts/package-debug.sh"), str(bundle), "local.chatty.Chatty.verification"], check=True)
     control = workspace / "control.json"
     environment = {**os.environ, "CHATTY_DEBUG_DIRECTORY": str(workspace / "data"), "CHATTY_DEBUG_CONTROL_FILE": str(control)}
+    if cold_model: environment["CHATTY_DEBUG_MODEL_DIRECTORY"] = str(workspace / "data/Models")
+    if model_cache: environment["CHATTY_DEBUG_MODEL_DIRECTORY"] = str(model_cache.resolve())
     log_path = workspace / "app.log"
     app = subprocess.Popen([str(bundle / "Contents/MacOS/Chatty")], env=environment,
                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0)
@@ -456,10 +509,12 @@ if __name__ == "__main__":
     parser.add_argument("--control", type=Path, default=root / "build/debug-control.json")
     parser.add_argument("--report", type=Path, default=root / "build/debug-verification.json")
     parser.add_argument("--audio", action="store_true", help="Also exercise the downloaded local model and real audio/recording pipeline")
+    parser.add_argument("--model-cache", type=Path, help="Use a specific model cache for download/resume checks")
+    parser.add_argument("--cold-model", action="store_true", help="Use a fresh model cache and download through the actual settings workflow; use with --launch --audio")
     parser.add_argument("--launch", action="store_true", help="Package an already-built debug binary, launch a unique sandbox, verify and quit only that app")
     args = parser.parse_args()
     try:
-        report = launch_and_verify(root, args.audio, args.report) if args.launch else verify(module.HarnessClient(args.control), with_audio=args.audio)
+        report = launch_and_verify(root, args.audio, args.report, args.cold_model, args.model_cache) if args.launch else verify(module.HarnessClient(args.control), with_audio=args.audio)
         args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2))
         print(json.dumps({"passed": report["passed"], "scenarios": len(report["scenarios"]), "failures": [r["name"] for r in report["scenarios"] if not r["passed"]], "report": str(args.report)}))
         sys.exit(0 if report["passed"] else 1)

@@ -16,14 +16,14 @@ class HarnessClient:
         os.kill(self.connection["pid"], 0)
         self.url = self.connection["url"].rstrip("/")
 
-    def request(self, path, payload=None):
+    def request(self, path, payload=None, timeout=20):
         data = None if payload is None else json.dumps(payload).encode()
         request = urllib.request.Request(self.url + path, data=data, headers={
             "X-Chatty-Debug-Token": self.connection["token"],
             "Content-Type": "application/json",
         })
         try:
-            with urllib.request.urlopen(request, timeout=20) as response:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
                 return json.load(response)
         except urllib.error.HTTPError as error:
             detail = error.read().decode()
@@ -36,7 +36,7 @@ class HarnessClient:
         return self.request("/state")
 
     def wait(self, **condition):
-        return self.request("/wait", condition)
+        return self.request("/wait", condition, timeout=max(20, condition.get("timeoutSeconds", 15) + 5))
 
 
 def parser():
@@ -62,13 +62,15 @@ def parser():
     replay = commands.add_parser("replay", help="Replay audio through the real resampler, AAC recorder and local recognizer")
     replay.add_argument("file", type=Path)
     render = commands.add_parser("render", help="Render the app's own view tree to a PNG artifact")
-    render.add_argument("view", choices=["panel", "overlay", "settings", "paste", "shortcut"])
+    render.add_argument("view", choices=["panel", "overlay", "settings", "paste", "shortcut", "speech"])
     globals_command = commands.add_parser("globals", help="Explicitly enable or disable native global shortcuts")
     globals_command.add_argument("--enabled", action=argparse.BooleanOptionalAction, default=False)
     faults = commands.add_parser("faults", help="Configure injected input failures; unspecified faults are cleared")
     for flag in ["hold-preparation", "fail-start", "fail-stop", "fail-cancel"]:
         faults.add_argument("--" + flag, action="store_true")
     wait = commands.add_parser("wait", help="Wait for observed state changes, with a 15-second deadline")
+    wait.add_argument("--timeout", dest="timeoutSeconds", type=int)
+    wait.add_argument("--model-phase", dest="modelPhase", choices=["notDownloaded", "downloaded", "preparing", "ready", "failed"])
     wait.add_argument("--history-id", dest="historyID")
     wait.add_argument("--history-phase", dest="historyPhase", choices=["transcribing", "complete", "cancelled", "failed"])
     wait.add_argument("--phase", choices=["idle", "preparing", "listening", "finishing", "complete", "failed"])
@@ -77,7 +79,7 @@ def parser():
     wait.add_argument("--requests", dest="requestCount", type=int)
     wait.add_argument("--recordings", dest="recordingCount", type=int)
     ui = commands.add_parser("ui", help="Inspect or operate actual AppKit controls by their Accessibility labels")
-    ui.add_argument("view", choices=["panel", "settings", "paste", "shortcut"])
+    ui.add_argument("view", choices=["panel", "settings", "paste", "shortcut", "speech"])
     ui.add_argument("--show", action="store_true")
     ui.add_argument("--control-label")
     ui.add_argument("--value")
@@ -114,8 +116,8 @@ def run(args):
                 "vocabulary": {"value": "optional saved-audio vocabulary"},
                 "globals": {"enabled": False},
                 "replayAudio": {"audioPath": "absolute file path"},
-                "render": {"view": "panel|overlay|settings|paste|shortcut"},
-                "ui": {"view": "panel|settings|paste|shortcut", "show": True, "control": "Accessibility label or button title", "value": "optional edit", "click": False},
+                "render": {"view": "panel|overlay|settings|paste|shortcut|speech"},
+                "ui": {"view": "panel|settings|paste|shortcut|speech", "show": True, "control": "Accessibility label or button title", "value": "optional edit", "click": False},
                 "historyActions": {"recordingID": "UUID from state.latestRecording", "paste": False},
                 "shortcutKey": {"keyCode": "macOS UInt16 code", "modifiers": ["command", "control", "option", "shift"], "value": "characters"},
                 "nativeHotkey": {"keyCode": "1 for Escape or 2 for recording; requires globals enabled"},
@@ -138,7 +140,7 @@ def run(args):
     if args.action == "faults":
         return client.command("inputFaults", holdPreparation=args.hold_preparation, failStart=args.fail_start, failStop=args.fail_stop, failCancel=args.fail_cancel)
     if args.action == "wait":
-        return client.wait(**{k: getattr(args, k) for k in ["phase", "textContains", "corrected", "requestCount", "recordingCount", "historyID", "historyPhase"] if getattr(args, k) is not None})
+        return client.wait(**{k: getattr(args, k) for k in ["phase", "textContains", "corrected", "requestCount", "recordingCount", "historyID", "historyPhase", "modelPhase", "timeoutSeconds"] if getattr(args, k) is not None})
     if args.action == "ui":
         if args.show or args.control_label:
             client.command("ui", view=args.view, show=args.show, control=args.control_label, value=args.value, click=args.click)

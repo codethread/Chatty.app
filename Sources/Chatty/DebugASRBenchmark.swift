@@ -43,7 +43,7 @@ enum DebugASRBenchmark {
         }
         let recognizer = LocalSpeechRecognizer()
         let loadStart = ContinuousClock.now
-        if engine != "apple" { try await recognizer.prepare() }
+        if engine != "apple" { try await recognizer.prepare(allowDownload: engine == "prepare") }
         let loadSeconds = seconds(loadStart.duration(to: .now))
         if engine == "prepare" {
             emit(["type": "ready", "model": "nemotron-600m-560ms", "loadSeconds": loadSeconds])

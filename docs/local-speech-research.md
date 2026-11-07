@@ -174,3 +174,20 @@ decision should use a short set of Adam's real phrases, especially names and
 technical terms that Apple gets wrong. If those favor TDT or a larger Whisper
 model, use live provisional output plus phrase-level audio re-decoding; measure
 that combination before replacing the streaming backend.
+
+## Production integration measurements (2026-11-07)
+
+The selectable production backend was checked locally with two existing user
+recordings using an optimized release build and the fixed 560 ms Nemotron model.
+Only aggregate timings are retained here; private audio and transcripts stay out
+of Git and the PR.
+
+| Replay | Audio | Model load | First text | Typical update gap | Completion |
+| --- | --- | --- | --- | --- | --- |
+| Clock-paced streaming | 9.5 s | 0.268 s | 1.156 s from file start | 0.568 s median | 0.037 s after final audio |
+| Unpaced throughput | 94.7 s | 0.142 s | Not a live-latency measurement | Not a live-latency measurement | 2.175 s total inference (about 43.5× real time) |
+
+First text includes any initial quiet in the recording. These timings establish
+that inference kept up on this Mac; they do not establish UI latency, physical
+microphone performance or comparative accuracy. Separate app scenarios exercise
+both configured engines through shared recognition, persistence and paste.

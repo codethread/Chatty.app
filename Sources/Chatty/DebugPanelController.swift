@@ -105,7 +105,8 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
         let cancelHistory = NSButton(title: "Cancel upload", target: self, action: #selector(cancelHistory))
         let copyHistory = NSButton(title: "Copy saved transcript", target: self, action: #selector(copyHistory))
         let settings = NSButton(title: "Sentence cleanup…", target: self, action: #selector(showSettings))
-        for button in [inject, release, releaseStart, inspect, target, state, transcribe, cancelHistory, copyHistory, settings] { button.bezelStyle = .rounded }
+        let speech = NSButton(title: "Speech recognition…", target: self, action: #selector(showSpeechSettings))
+        for button in [inject, release, releaseStart, inspect, target, state, transcribe, cancelHistory, copyHistory, settings, speech] { button.bezelStyle = .rounded }
         harnessStatus.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
         harnessStatus.setAccessibilityLabel("Harness connection")
         let replayButton = NSButton(title: "Replay audio…", target: self, action: #selector(replayAudio))
@@ -153,7 +154,7 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
             row([streamButton, sampleButton, replayButton]),
             status,
             row([target, state]),
-            row([historyPicker, settings]),
+            row([historyPicker, speech, settings]),
             row([transcribe, cancelHistory, copyHistory]),
             harnessStatus,
             row([requestStatus, clearButton]),
@@ -331,6 +332,9 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
     @objc private func transcribeHistory() { historyAction(.retryTranscription) }
     @objc private func cancelHistory() { historyAction(.cancelTranscription) }
     @objc private func copyHistory() { historyAction(.copyRecording) }
+    @objc private func showSpeechSettings() {
+        do { _ = try harness?.uiWindow?("speech", true) } catch { corrector.log(error.localizedDescription) }
+    }
     @objc private func showSettings() {
         do { _ = try harness?.uiWindow?("settings", true) } catch { corrector.log(error.localizedDescription) }
     }
@@ -368,7 +372,7 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
         let picker = NSOpenPanel()
         picker.allowsMultipleSelection = false
         picker.canChooseDirectories = false
-        picker.message = "Replay speech locally in real time through Nemotron. No audio is uploaded."
+        picker.message = "Replay speech through the configured recognition engine in real time. Audio stays on this Mac."
         picker.begin { [weak self] response in
             guard response == .OK, let self, let url = picker.url else { return }
             self.input.audioFile.audioURL = url

@@ -40,7 +40,7 @@ enum DebugUI {
             case let popup as NSPopUpButton:
                 guard popup.itemTitles.contains(value) else { throw DebugInputError.injected("Unknown popup choice") }
                 popup.selectItem(withTitle: value)
-                NSApp.sendAction(popup.action!, to: popup.target, from: popup)
+                if let action = popup.action { NSApp.sendAction(action, to: popup.target, from: popup) }
             case let field as NSTextField where field.isEditable: field.stringValue = value
             case let editor as NSTextView where editor.isEditable:
                 editor.string = value

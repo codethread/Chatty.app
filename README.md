@@ -174,7 +174,7 @@ python3 scripts/chatty-debug.py wait --phase complete
 ./scripts/check.sh
 ```
 
-`check.sh` runs locked Swift checks, a signed production archive build, and 27
+`check.sh` runs locked Swift checks, a signed production archive build, and 29
 scenarios in its own signed debug app and sandbox. It includes local-model audio
 replay; `--skip-audio` omits the model-dependent scenarios. It writes a JSON report
 and own-view PNG artifacts, quits only its app, and leaves user builds alone.
@@ -187,6 +187,22 @@ Production first launch front-loads setup:
 - Accessibility access, needed for the global double-left-shift shortcut
 
 If the shortcut does not work, enable Chatty under **System Settings → Privacy & Security → Accessibility** and relaunch.
+
+## Speech recognition
+
+Open **Speech Recognition…** from the menu bar. **Apple · built in** is the
+production default. To use **Nemotron 600M · local streaming**, click
+**Download Model** (approximately 626 MB), wait for readiness, select Nemotron
+and Save. The current fixed model recognizes English in 560 ms chunks. Its
+speech recognition runs on this Mac; sentence cleanup still uses OpenAI.
+The window shows download/load progress and a retry action on failure.
+
+The choice is stored as `speechRecognition` (`apple` or `nemotron`) in
+`~/Library/Application Support/Chatty/config.json`. Save applies it to the next
+dictation; an ongoing recording retains its original engine. Cancel leaves the
+saved choice unchanged. Existing installations default to Apple. You can switch
+back to Apple in the same window. Models stay in the FluidAudio cache and remain
+warm within the running app after first use.
 
 ## Sentence cleanup
 
@@ -250,3 +266,8 @@ requires Swift 6.2 or later. Live dictation uses `SpeechAnalyzer` and
 `SpeechTranscriber`; unsupported locales or unavailable models produce a visible error. No Apple Developer account is
 required for local unsigned builds. Distribution outside your machine may need
 signing/notarization.
+
+The proposed next step for real microphone I/O automation is documented in
+[macOS I/O testing research](docs/macos-io-testing.md): virtual Core Audio input
+plus XCUITest on a dedicated test Mac. This research is separate from completed
+file-replay and native-paste verification.

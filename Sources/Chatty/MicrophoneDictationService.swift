@@ -7,28 +7,26 @@ import Synchronization
 
 @MainActor
 final class MicrophoneDictationService: DictationInputService {
-    enum Backend: Sendable {
-        case apple, nemotron
-    }
     private static let logger = Logger(subsystem: "local.chatty.Chatty", category: "Recording")
     private let locale: Locale
-    private let backend: Backend
+    var backend: SpeechRecognitionEngine
     private let localRecognizer: LocalSpeechRecognizer
     private var session: Session?
+    var recognitionEngine: SpeechRecognitionEngine? { session?.recognition.engine }
     var onDiagnostic: (@MainActor @Sendable (String) -> Void)?
 
-    init(locale: Locale = .current, backend: Backend = .apple,
+    init(locale: Locale = .current, backend: SpeechRecognitionEngine = .apple,
          localRecognizer: LocalSpeechRecognizer = LocalSpeechRecognizer()) {
         self.locale = locale
         self.backend = backend
         self.localRecognizer = localRecognizer
     }
 
-    func prepareLocalModel() async throws { try await localRecognizer.prepare() }
+    func prepareLocalModel() async throws { try await localRecognizer.prepare(allowDownload: true) }
 
     func start(recordingURL: URL) async throws -> AsyncThrowingStream<DictationEvent, Error> {
         if let session, !session.isStopped { throw MicrophoneError.alreadyRecording }
-        let session = Session(recordingURL: recordingURL)
+        let session = Session(recordingURL: recordingURL, recognition: SpeechRecognitionSession(engine: backend, local: localRecognizer, locale: locale))
         self.session = session
         Self.logger.notice("Starting on-device dictation; destination=\(recordingURL.path, privacy: .public)")
 
@@ -40,66 +38,13 @@ final class MicrophoneDictationService: DictationInputService {
             guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
                 throw MicrophoneError.noAudioInput
             }
-            let analysisFormat: AVAudioFormat
-            switch backend {
-            case .nemotron:
-                try await localRecognizer.prepare()
-                try checkSession(session)
-                analysisFormat = AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1)!
-                let diagnostic = onDiagnostic
-                let recognizer = localRecognizer
-                session.resultTask = Task { [weak self] in
-                    do {
-                        try await recognizer.run(
-                            input: session.analysis.stream, events: session.events.continuation,
-                            onDiagnostic: { message in await diagnostic?(message) }
-                        )
-                    } catch {
-                        self?.fail(error, session: session)
-                        throw error
-                    }
-                }
-            case .apple:
-                guard SpeechTranscriber.isAvailable else { throw MicrophoneError.recognitionUnavailable }
-                guard let locale = await SpeechTranscriber.supportedLocale(equivalentTo: locale) else {
-                    throw MicrophoneError.unsupportedLocale(locale.identifier)
-                }
-                try checkSession(session)
-
-                let transcriber = SpeechTranscriber(locale: locale, preset: .timeIndexedProgressiveTranscription)
-                let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber])
-                try checkSession(session)
-                session.installationRequest = request
-                if let request { try await request.downloadAndInstall() }
-                try checkSession(session)
-                session.installationRequest = nil
-
-                let analyzer = SpeechAnalyzer(modules: [transcriber])
-                session.analyzer = analyzer
-                guard let compatibleFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
-                    compatibleWith: [transcriber], considering: inputFormat
-                ) else { throw MicrophoneError.noCompatibleFormat }
-                analysisFormat = compatibleFormat
-                try checkSession(session)
-                try await analyzer.prepareToAnalyze(in: analysisFormat)
-                try checkSession(session)
-
-                session.resultTask = Task { [weak self] in
-                    do {
-                        var transcript = RecognitionTranscript()
-                        for try await result in transcriber.results {
-                            try Task.checkCancellation()
-                            transcript.replace(range: result.range, text: String(result.text.characters), isFinal: result.isFinal)
-                            session.events.continuation.yield(.transcript(transcript.snapshot))
-                        }
-                    } catch {
-                        self?.fail(error, session: session)
-                        throw error
-                    }
-                }
-                try await analyzer.start(inputSequence: session.analysis.stream)
-                try checkSession(session)
-            }
+            let diagnostic = onDiagnostic
+            let analysisFormat = try await session.recognition.start(
+                inputFormat: inputFormat, input: session.analysis.stream, events: session.events.continuation,
+                onDiagnostic: { await diagnostic?($0) },
+                onFailure: { [weak self] error in self?.fail(error, session: session) }
+            )
+            try checkSession(session)
 
             let processor = try MicrophoneBufferProcessor(
                 recordingURL: recordingURL, inputFormat: inputFormat, analysisFormat: analysisFormat
@@ -152,15 +97,12 @@ final class MicrophoneDictationService: DictationInputService {
     func cancel() async throws {
         guard let session else { return }
         session.cancelled = true
-        session.installationRequest?.progress.cancel()
         stopCapture(session)
         session.stopTask?.cancel()
         session.processingTask?.cancel()
-        session.resultTask?.cancel()
         session.analysis.continuation.finish()
-        await session.analyzer?.cancelAndFinishNow()
+        await session.recognition.cancel()
         _ = try? await session.processingTask?.value
-        _ = try? await session.resultTask?.value
         _ = try? await session.stopTask?.value
         session.events.continuation.finish()
         session.isStopped = true
@@ -193,12 +135,10 @@ final class MicrophoneDictationService: DictationInputService {
                 try await session.processingTask?.value
                 session.analysis.continuation.finish()
                 if session.failure != nil || session.cancelled {
-                    session.resultTask?.cancel()
-                    await session.analyzer?.cancelAndFinishNow()
+                    await session.recognition.cancel()
                 } else {
-                    try await session.analyzer?.finalizeAndFinishThroughEndOfInput()
+                    try await session.recognition.finish()
                 }
-                try await session.resultTask?.value
                 if let failure = session.failure { throw failure }
                 try Task.checkCancellation()
                 session.events.continuation.yield(.level(0))
@@ -206,9 +146,7 @@ final class MicrophoneDictationService: DictationInputService {
                 session.isStopped = true
                 return session.hasRecording ? session.recordingURL : nil
             } catch {
-                await session.analyzer?.cancelAndFinishNow()
-                session.resultTask?.cancel()
-                _ = try? await session.resultTask?.value
+                await session.recognition.cancel()
                 session.events.continuation.finish(throwing: error)
                 session.isStopped = true
                 throw error
@@ -267,11 +205,9 @@ final class MicrophoneDictationService: DictationInputService {
         let events = AsyncThrowingStream<DictationEvent, Error>.makeStream()
         let captured = AsyncStream<AnalyzerInput>.makeStream()
         let analysis = AsyncStream<AnalyzerInput>.makeStream()
-        var analyzer: SpeechAnalyzer?
-        var installationRequest: AssetInstallationRequest?
+        let recognition: SpeechRecognitionSession
         var configurationObserver: NSObjectProtocol?
         var processingTask: Task<Void, Error>?
-        var resultTask: Task<Void, Error>?
         var stopTask: Task<URL?, Error>?
         var hasTap = false
         var hasRecording = false
@@ -279,7 +215,9 @@ final class MicrophoneDictationService: DictationInputService {
         var cancelled = false
         var failure: Error?
 
-        init(recordingURL: URL) { self.recordingURL = recordingURL }
+        init(recordingURL: URL, recognition: SpeechRecognitionSession) {
+            self.recordingURL = recordingURL; self.recognition = recognition
+        }
     }
 }
 
@@ -427,8 +365,6 @@ actor MicrophoneBufferProcessor {
 private enum MicrophoneError: LocalizedError {
     case alreadyRecording
     case microphoneDenied
-    case recognitionUnavailable
-    case unsupportedLocale(String)
     case noAudioInput
     case audioInputChanged
     case noCompatibleFormat
@@ -439,8 +375,6 @@ private enum MicrophoneError: LocalizedError {
         switch self {
         case .alreadyRecording: "A microphone dictation session is already running."
         case .microphoneDenied: "Microphone permission denied. Enable Chatty in System Settings → Privacy & Security → Microphone."
-        case .recognitionUnavailable: "On-device speech recognition is unavailable on this Mac."
-        case .unsupportedLocale(let locale): "On-device speech recognition does not support \(locale)."
         case .noAudioInput: "The default microphone has no available audio input."
         case .audioInputChanged: "The audio input changed during dictation. The recording was stopped; start dictation again to use the new input."
         case .noCompatibleFormat: "Could not configure a compatible audio format for dictation."
