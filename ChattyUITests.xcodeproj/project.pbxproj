@@ -1,0 +1,28 @@
+// !$*UTF8*$!
+{ archiveVersion = 1; classes = {}; objectVersion = 56; objects = {
+000000000000000000000201 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PasteTarget.swift; path = "Tests/PasteTarget/PasteTarget.swift"; sourceTree = SOURCE_ROOT; };
+000000000000000000000301 = {isa = PBXBuildFile; fileRef = 000000000000000000000201; };
+000000000000000000000202 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DictationUITests.swift; path = "Tests/ChattyUITests/DictationUITests.swift"; sourceTree = SOURCE_ROOT; };
+000000000000000000000302 = {isa = PBXBuildFile; fileRef = 000000000000000000000202; };
+000000000000000000000203 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HarnessClient.swift; path = "Sources/ChattyHarness/HarnessClient.swift"; sourceTree = SOURCE_ROOT; };
+000000000000000000000303 = {isa = PBXBuildFile; fileRef = 000000000000000000000203; };
+000000000000000000000211 = {isa = PBXFileReference; explicitFileType = wrapper.application; path = ChattyPasteTarget.app; sourceTree = BUILT_PRODUCTS_DIR; };
+000000000000000000000212 = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = ChattyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+000000000000000000000001 = {isa = PBXGroup; children = (000000000000000000000201,000000000000000000000202,000000000000000000000203,000000000000000000000002,); sourceTree = "<group>"; };
+000000000000000000000002 = {isa = PBXGroup; name = Products; children = (000000000000000000000211,000000000000000000000212,); sourceTree = "<group>"; };
+000000000000000000000401 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000301,); runOnlyForDeploymentPostprocessing = 0; };
+000000000000000000000402 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000302,000000000000000000000303,); runOnlyForDeploymentPostprocessing = 0; };
+000000000000000000000403 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+000000000000000000000404 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+000000000000000000000101 = {isa = PBXNativeTarget; buildConfigurationList = 000000000000000000000501; buildPhases = (000000000000000000000401,000000000000000000000403,); buildRules = (); dependencies = (); name = ChattyPasteTarget; productName = ChattyPasteTarget; productReference = 000000000000000000000211; productType = "com.apple.product-type.application"; };
+000000000000000000000102 = {isa = PBXNativeTarget; buildConfigurationList = 000000000000000000000502; buildPhases = (000000000000000000000402,000000000000000000000404,); buildRules = (); dependencies = (000000000000000000000601,); name = ChattyUITests; productName = ChattyUITests; productReference = 000000000000000000000212; productType = "com.apple.product-type.bundle.ui-testing"; };
+000000000000000000000601 = {isa = PBXTargetDependency; target = 000000000000000000000101; targetProxy = 000000000000000000000602; };
+000000000000000000000602 = {isa = PBXContainerItemProxy; containerPortal = 000000000000000000000100; proxyType = 1; remoteGlobalIDString = 000000000000000000000101; remoteInfo = ChattyPasteTarget; };
+000000000000000000000100 = {isa = PBXProject; attributes = {LastUpgradeCheck = 2640; TargetAttributes = {000000000000000000000102 = {TestTargetID = 000000000000000000000101; }; }; }; buildConfigurationList = 000000000000000000000500; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en,Base,); mainGroup = 000000000000000000000001; productRefGroup = 000000000000000000000002; projectDirPath = ""; projectRoot = ""; targets = (000000000000000000000101,000000000000000000000102,); };
+000000000000000000000500 = {isa = XCConfigurationList; buildConfigurations = (000000000000000000000510,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
+000000000000000000000501 = {isa = XCConfigurationList; buildConfigurations = (000000000000000000000511,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
+000000000000000000000502 = {isa = XCConfigurationList; buildConfigurations = (000000000000000000000512,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
+000000000000000000000510 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {SDKROOT = macosx; MACOSX_DEPLOYMENT_TARGET = 26.0; SWIFT_VERSION = 6.0; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; DEBUG_INFORMATION_FORMAT = dwarf; ENABLE_TESTABILITY = YES; ONLY_ACTIVE_ARCH = YES; CLANG_ENABLE_MODULES = YES; CODE_SIGN_IDENTITY = "-"; CODE_SIGN_STYLE = Manual; }; };
+000000000000000000000511 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {PRODUCT_NAME = "$(TARGET_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = local.chatty.ChattyPasteTarget; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_NSHumanReadableCopyright = ""; ENABLE_APP_SANDBOX = NO; ENABLE_HARDENED_RUNTIME = NO; }; };
+000000000000000000000512 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {PRODUCT_NAME = "$(TARGET_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = local.chatty.ChattyUITests; GENERATE_INFOPLIST_FILE = YES; TEST_TARGET_NAME = ChattyPasteTarget; ENABLE_APP_SANDBOX = NO; ENABLE_HARDENED_RUNTIME = NO; SWIFT_EMIT_LOC_STRINGS = NO; }; };
+}; rootObject = 000000000000000000000100; }

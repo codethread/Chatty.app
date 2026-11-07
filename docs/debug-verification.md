@@ -1,161 +1,143 @@
 # Debug verification
 
-Acceptance is based on complete user workflows in the running application.
-Targeted Swift tests support specific logic; their count does not establish
-integration correctness. The scenario runner launches a real signed app and
-observes its controllers, native views, files and HTTP traffic together.
+Acceptance means complete workflows in the running application. Swift tests
+support specific logic; their count does not establish integration correctness.
+The native XCUITest bundle drives real AppKit controls in a separate process.
+The authenticated harness API supplies fixtures/faults and observes state and
+posted HTTP bytes. It also opens the shortcut-capture panel for the keyboard
+contract. It does not click controls on the UI suite's behalf.
 
-Run `./scripts/check.sh` from a macOS 26 Apple Silicon checkout. It acquires
-`/tmp/agent-cpu.lock` for Swift builds, tests, release packaging and the AppKit
-scenario suite. It builds both production and `CHATTY_DEBUG_PANEL`, signs and
-verifies a production archive, then packages a unique verification app, launches
-it with fresh storage, exercises it, renders its own views and quits it. It does
-not install into `/Applications`, reset TCC, alter the production clipboard or
-kill another checkout's app. Logs are in `build/check-logs/`; the machine-readable
-report is `build/check-verification.json`.
+## Run the native suite
 
-The default includes a downloaded local Nemotron model and real-time file audio.
-`--skip-audio` skips only the four model-dependent scenarios. Model preparation
-can download roughly 626 MB once. No OpenAI token is required: the default
-backend is a real HTTP server bound to `127.0.0.1` on an ephemeral port.
-
-## Interactive controls
-
-`./scripts/run-debug.sh` opens this checkout's debug panel. Its config, recordings
-and rendered artifacts live in `build/debug-data/`. The panel exposes:
-
-- Stable and provisional recognition snapshots, waveform levels and AAC files.
-- Typed streaming, local audio replay, Apple and Nemotron microphone sources.
-- HTTP success, held replies, authentication/rate/server errors, disconnection,
-  malformed JSON, refusal, incomplete response and empty output.
-- Preparation, stream, Stop and Cancel failures, including held preparation.
-- Posted payload inspection, request timing, a private clipboard and AppKit paste
-  destination, saved-recording upload/retry/cancel/copy, and sentence settings.
-
-`python3 scripts/chatty-debug.py --help` lists the CLI operations. Mutations
-acknowledge acceptance; follow them with `wait` to assert the resulting state.
-Waits subscribe to controller events, with a 15-second deadline. The scenarios do
-not synchronize with fixed sleeps. Audio replay deliberately follows a clock to
-exercise streaming; overlay success deliberately dismisses after one second.
+On an unlocked macOS 26 Apple Silicon Mac with full Xcode selected:
 
 ```sh
-python3 scripts/chatty-debug.py fake hold
-python3 scripts/chatty-debug.py start
-python3 scripts/chatty-debug.py wait --phase listening
-python3 scripts/chatty-debug.py inject --committed 'First sentence.' --partial 'live tail'
-python3 scripts/chatty-debug.py wait --requests 1
-python3 scripts/chatty-debug.py requests
-python3 scripts/chatty-debug.py release
-python3 scripts/chatty-debug.py stop
-python3 scripts/chatty-debug.py wait --phase complete
+./scripts/test-ui.sh
+./scripts/check.sh
 ```
 
-`requests` returns at most 20 summaries by default (maximum 100). `--id` expands
-one actual posted payload, including instructions/input/model, or the audio
-upload's byte count, SHA256 and vocabulary. The fake receives the production
-encoder's JSON or multipart bytes and the production URLSession parses its
-response. Cleanup returns the posted input in SCREAMING_SNAKE_CASE; audio uploads
-return a configurable reference transcript, since the fake does not transcribe.
+`test-ui.sh` builds and signs `build/Chatty UITest.app`, then runs
+`ChattyUITests.xcodeproj` with `xcodebuild test`. The main app stays a Swift
+package; the small Xcode project contains the UI testing bundle and an owned
+external paste destination. No project generator or scripting runtime is needed.
+Each test launches Chatty with a fresh directory in the UI runner's sandbox temp folder, then
+quits only its own app. Installed user builds and production storage stay separate.
 
-`ui settings --show` opens the actual settings window. Use `--control-label`,
-`--value` and `--click` to edit real controls and invoke their target/action
-handlers. `ui panel` reports Accessibility labels, values and enabled states.
-These are the same windows used interactively, not parallel test forms.
-`render panel` and `render overlay` write PNGs of the app's own view tree; they
-exclude window chrome and desktop/background blur.
+On first run, macOS asks to **Enable UI Automation** using password/Touch ID.
+Approve that system prompt. The test app also needs Accessibility permission for
+its production CGEvent paste path: add `build/Chatty UITest.app` in System Settings
+→ Privacy & Security → Accessibility. Neither script resets or edits TCC. A missing
+authorization, locked desktop or unavailable model causes failure, not a passed
+or silently skipped test. Run serially without other desktop automation: focus,
+keyboard and clipboard are shared system resources.
 
-The control file contains an ephemeral token and is mode 0600. Do not commit or
-share it. Every control endpoint checks `X-Chatty-Debug-Token`. The debug workspace
-must be separate from the production data directory. Global shortcuts start off;
-`globals --enabled` enables native registration when explicitly testing it.
-`reset --clear-data` clears only the debug workspace's indexed recordings.
+Local builds use ad-hoc signing. A rebuilt app can invalidate its Accessibility
+grant because macOS identifies that signature by its code hash. Reauthorize the
+rebuilt app (remove and re-add its entry if the switch is on but access is still
+denied), then use `./scripts/test-ui.sh --no-build` to run the previously
+built app and UI bundle without replacing either. That mode intentionally does
+not compile code changes. For an unattended test Mac, provision a stable signing
+certificate and set `CHATTY_DEBUG_SIGN_IDENTITY` to its identity when packaging;
+the script fails if that identity is unavailable. No certificate is created and
+no code-signing requirement or TCC check is weakened by the tooling.
+`./scripts/check.sh --no-build` still runs the Swift/release checks, then reuses
+those UI artifacts. A normal run is required after changing the app or UI tests.
 
-For an existing running app, `python3 scripts/verify-debug.py --audio` runs the
-same scenarios and resets its sandbox. `--launch` instead packages the existing
-Swift debug binary and owns a fresh process and workspace. Build with
-`swift build -Xswiftc -DCHATTY_DEBUG_PANEL` before using `--launch` directly.
+The default audio contract requires the already downloaded fixed Nemotron model
+in Chatty's shared cache. Use the debug panel's Speech Recognition settings to
+download it first (approximately 626 MB). The ordinary suite never initiates a
+network download. `--skip-audio` explicitly excludes the named audio contract;
+all remaining tests use an empty isolated model cache.
 
-## External application paste check
+`check.sh` additionally runs locked Swift build/logic checks and packages a signed
+production ZIP. Native Foundation code checks the extracted archive's identity,
+menu-bar flag and absence of the debug harness. Expensive commands use
+`qlock` on `/tmp/agent-cpu.lock`. Logs live in `build/check-logs/`; timestamped
+`build/ChattyUI-*.xcresult` bundles contain results, final state attachments and
+Xcode failure screenshots. Open a result with `open build/ChattyUI-….xcresult`.
+Test workspaces remain available for inspecting config, metadata and AAC files;
+their absolute paths are recorded in the attached final state.
+They contain only the synthetic fixtures unless explicitly changed by a developer.
 
-With an unlocked desktop, create an empty TextEdit document and focus its editor.
-Run `python3 scripts/chatty-debug.py system-paste --target-bundle com.apple.TextEdit`
-and check that
-`state.systemPasteTarget` is `com.apple.TextEdit`. Note the current
-`systemPasteDispatches` count. Start injected dictation or replay the speech
-fixture, observe Listening, then Stop. Wait for Complete and for
-`wait --paste-dispatches N` with the previous count plus one. Inspect the actual TextEdit document through
-the native UI; the text must match the completed transcript exactly. This path
-runs production app activation and CGEvent Command-V, rather than the private
-NSTextView paste shortcut. Finish with `restore-clipboard`; the snapshot reports
-`clipboardRestored: true` only after every saved representation compares equal.
-Clipboard data stays in memory and is never returned by the control API.
-Restoration is rejected while keyboard paste is still queued. Dispatch completion
-proves that events were posted; the destination's actual text remains the final
-acceptance check.
-The mode is one-shot and must be explicitly rearmed for another test. If someone
-copies new content during the check, restoration keeps those newer contents and
-reports that the clipboard changed.
+## Contracts
 
-## Evidence and limits
+See [the UI tests](../Tests/ChattyUITests/DictationUITests.swift) for exact assertions.
 
-The 29 AppKit-process scenarios and focused Swift tests cover the following
-boundaries. The JSON report records each scenario's evidence or failure state.
+On 2026-11-07, `./scripts/check.sh --no-build` passed the complete gate:
+10 native UI workflows, zero failures and zero skips, including both recognizers,
+cross-app keys and exact external paste with clipboard restoration. Swift checks
+and signed production archive validation also passed. The local result is
+`build/ChattyUI-20261107-202359.xcresult`; the authorized UI artifacts had already
+been built before that run. A preceding full UI run also passed all ten workflows.
 
-| Surface | Verification |
+| Workflow | Observed contract |
 | --- | --- |
-| Streaming lifecycle | Preparation, stable/provisional updates, queued cleanup, Stop, Escape, cancel/restart and stale replies through the actual controller. |
-| Cleanup HTTP | Actual serialized payload, context, prompt/dictionary, all fake response/error modes and cancellation; real response parser. |
-| Saved audio HTTP | Real playable AAC multipart upload, exact bytes and SHA256, vocabulary, saved transcript/error, retry, clear error, copy and cancellation. |
-| Concurrent presentation | Background uploads still persist, but cannot replace/close live dictation or steal its clipboard. Delayed dismissal uses an operation-scoped overlay lease. |
-| Overlay | Actual text storage, UTF-16 color spans, live/queued/corrected state, Unicode, five-line height cap, bottom scrolling, processing/error controls and PNG renders. |
-| Settings | Actual speech-engine window defaults, download/load, Save, Cancel, persisted selection and switching both recognizers; cleanup window Save, validation, Cancel and Reset-then-Save actions, config reload, and settings in the posted API payload. |
-| Persistence | Fresh store reload, retention, corrupt/unwritable storage, audio preserved on failure and restart after repair. |
-| Credentials | Injected asynchronous Keychain loader: shared reads, caller cancellation, cache, replacement and failure/retry. No test writes a real API key. |
-| Shortcuts | Modifier parsing and double-left-Shift timing with NSEvents; actual shortcut capture, reject bare letter, cancel, Carbon registration/unregistration, event dispatch and Escape lifecycle in the app. |
-| Audio conversion | Shared capture processor: right-channel-only stereo at 16/44.1/48 kHz, downmix, analysis resampling, AAC decode, levels and file size. |
-| Recognition integration | Clock-paced speech fixture through that processor, model, pause punctuation, HTTP cleanup, recording history, copy and AppKit paste. Cancel/restart, early Stop, silence and missing file. |
-| Build/distribution | Ordinary Swift build, debug test build, production release archive, code signing/verification and a separately signed runnable harness bundle. |
+| Stream, queue, Stop | Real Start/Inject/Stop buttons, visible stable/provisional text, active/queued text-storage highlights, serialized HTTP, tail flush, exactly one completion/copy, paste destination, playable AAC and transcript after relaunch. |
+| Cancel and restart | Cancel copies visible text, discards unsaved audio, and a released late reply cannot change the next session. Held preparation can also be cancelled and restarted. |
+| Capture failures | Preparation, stream, Stop and Cancel faults show an error and preserve available audio without completing a transcript. |
+| HTTP failures | Actual URLSession requests/responses for 401, 429, 500, malformed, empty, refused, incomplete and disconnected responses; visible error controls, saved playable audio and no partial paste. |
+| Saved recording | Upload/retry/cancel/copy through real controls; exact multipart audio byte count/SHA256, persisted error clearing and no late reply replacing live dictation. |
+| Cleanup settings | Actual validation, Cancel, Save, relaunch persistence, Reset-then-Cancel, Reset-then-Save, and prompt/dictionary in the posted payload. |
+| Speech settings | Apple default, missing-model validation, Download availability and Cancel preserving selection after relaunch. |
+| Recognition switch | Cached model load and Nemotron Save through settings, persisted selection, clock-paced WAV through production conversion/recognition/cleanup/AAC/history/paste; switching to Apple during recording applies only to the next session. Silence closes a statement before capture ends. |
+| External paste | Separate native editor app receives the exact text through production app activation and CGEvent Command-V; inspect text before restoring and comparing all clipboard representations. |
+| Cross-app keys | Native shortcut capture, actual keyboard chord with another app focused, visible live text, then Escape from that app cancels and copies without saving. Direct Carbon dispatch is not substituted for keyboard delivery. |
 
-On 2026-11-07 the 29 process scenarios passed. Targeted Swift logic checks also
-passed. After unlocking, native UI operation verified panel Start/Inject/Stop,
-settings validation/Cancel and the private paste destination. The speech fixture
-then traversed capture conversion, local recognition, HTTP cleanup, AAC/history
-persistence and the production activation/CGEvent paste path into a real TextEdit
-document. Its exact visible text matched the completed transcript; restoring the
-clipboard compared every representation successfully. Native evidence is recorded
-in `build/native-verification.json` and `build/Chatty-native-paste.rtf`.
+Focused Swift tests retain coverage of pure parsing/context/UTF-16 logic,
+asynchronous credential loading, storage failure policy and audio conversion.
+They supplement these workflows. They do not claim hardware or desktop coverage.
 
-On 2026-11-07 the user confirmed that a physical Control–Option–Command–9
-keypress with another app focused opens Chatty's listening overlay. This verifies
-the custom shortcut across applications. Automated keypresses had not triggered
-it; registration and direct Carbon dispatch alone were not accepted as proof.
-The temporary binding was removed and debug global shortcuts disabled afterward.
-Actual microphone hardware and TCC prompts require a human. The API fake verifies
-wire/lifecycle behavior; real OpenAI output, authentication, latency and Keychain
-trust dialogs remain external checks for the later token. Apple recognition
-accuracy, optional Pi service output and noisy-environment accuracy are not
-established by the deterministic local-model fixture.
+## Interactive debug tools
 
-## Production speech settings acceptance
+```sh
+./scripts/run-debug.sh
+./scripts/chatty-debug --help
+./scripts/chatty-debug fake hold
+./scripts/chatty-debug start
+./scripts/chatty-debug wait --phase listening
+./scripts/chatty-debug inject --committed 'First sentence.' --partial 'live tail'
+./scripts/chatty-debug wait --requests 1
+./scripts/chatty-debug requests
+./scripts/chatty-debug release
+./scripts/chatty-debug stop
+./scripts/chatty-debug wait --phase complete
+```
 
-`verify-debug.py --launch --audio` includes the real speech settings window:
-Apple default, Cancel preserving the selection, actual model preparation, Save
-and reload, Nemotron replay through the shared production recognizer, and switch
-back to Apple with recording/paste verification. `--cold-model` gives the launched
-app an empty model cache and exercises the actual download and missing-model
-validation. It can download approximately 626 MB. Model waits observe state and
-have an explicit 900-second deadline. The ordinary suite uses the shared cache.
+`chatty-debug` is a Swift executable built by SwiftPM. The shell entry point only
+locates it. JSON goes to stdout; errors are JSON on stderr with a nonzero exit.
+Use `schema` for wait fields and `command --file FILE` for a full typed command
+without shell escaping. Commands acknowledge acceptance; `wait` subscribes to app
+events with a deadline. UI expectations use XCTest predicates. No scenario uses
+fixed sleeps for synchronization; audio replay deliberately follows the audio clock.
 
-See [macOS I/O testing research](macos-io-testing.md) for the proposed virtual-input
-and XCUITest lane that would additionally cross the real microphone input tap.
+`requests` returns 20 summaries by default (maximum 100). `--id` expands one
+actual posted payload. Cleanup's HTTP fake returns the production encoder's
+posted input in SCREAMING_SNAKE_CASE. Saved-audio uploads return a reference
+transcript: that HTTP fake does not perform speech recognition. `ui settings
+--show` opens the real window and reports labels/values/enabled states; `render
+panel` and `render overlay` write PNGs of the app's own views.
 
-On 2026-11-07 the empty-cache check rejected Save before download, displayed the
-real network download, and completed after an interruption/restart using the
-partial cache: approximately 626 MB, no partial files remaining. All 29 app
-workflows passed against that model. Native controls also saved both engine
-choices and both paths were observed pasting into TextEdit. The final Apple
-check used a clean document and waited for actual paste dispatch before inspecting
-its text. Premature clipboard restoration was rejected, and restoration after
-inspection compared all representations successfully. Local artifacts are
-`build/speech-download-resume-verification.json`, `build/native-verification.json`
-and `build/Chatty-production-engines.rtf`.
+The control file contains an ephemeral token and is mode 0600. Never commit or
+share it. Every endpoint checks `X-Chatty-Debug-Token`. Debug storage must be
+separate from production. Global shortcuts start disabled. `reset --clear-data`
+removes only indexed debug recordings. The explicit `system-paste --target-bundle
+ID` path stages the general clipboard; wait for `--paste-dispatches N`, inspect
+the actual destination, then `restore-clipboard`. Dispatch alone does not prove
+paste delivery. Clipboard contents stay in memory and are never returned by the API.
+
+## Remaining external boundaries
+
+File replay crosses conversion and recognition but bypasses Core Audio's actual
+microphone input tap. Physical microphone acquisition, device/route changes,
+first-run microphone allow/deny, room acoustics and Keychain trust still need a
+separate lane. Live OpenAI authentication/output/latency and comparative ASR
+accuracy are not established by local HTTP and synthetic audio fixtures.
+The desktop keyboard test uses Control–Option–Command–9; default double-left-Shift
+timing remains covered by focused NSEvent logic checks.
+
+The user previously confirmed a physical Control–Option–Command–9 shortcut with
+another app focused. That is independent evidence from the repeatable native
+keyboard contract. See [macOS I/O research](macos-io-testing.md) for the proposed
+virtual Core Audio input lane. No audio driver or virtual device is installed by
+these checks. A real cold download/interruption/resume was verified during the
+model integration; the ordinary UI suite deliberately reuses that cached model.

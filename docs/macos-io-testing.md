@@ -1,6 +1,9 @@
 # Testing macOS I/O integrations
 
-Research checked on 2026-11-07. These are proposed additions, not completed tests.
+Research checked on 2026-11-07. The native XCUITest baseline is now implemented
+in [ChattyUITests](../Tests/ChattyUITests/DictationUITests.swift); see
+[debug verification](debug-verification.md) for execution and contracts. The
+virtual microphone, device routing and permission lanes below remain proposals.
 
 The practical next step is **a virtual Core Audio microphone plus macOS
 XCUITest**, running the real Chatty app and a separate paste destination. This
@@ -56,7 +59,7 @@ installed during this research.
    partial text, sentence completion, saved AAC/history and final pasted text.
 5. Activate a separate test destination, send the recording shortcut, stream the
    fixture, stop through the shortcut, and inspect the destination's actual text.
-   Use an owned tiny text-editor app eventually; TextEdit is a useful first proof.
+   Use the UI suite's owned native paste destination; TextEdit is useful for a manual check.
    Keep the control API for observations, fault injection and cleanup, while UI
    actions drive the acceptance path.
 6. Restore any changed audio defaults and clipboard in teardown. Record the
@@ -71,7 +74,7 @@ repeatable capture regression.
 
 ## Apple's UI test facilities
 
-Add a small Xcode **UI Testing Bundle**/scheme alongside the Swift package;
+The small Xcode **UI Testing Bundle**/scheme now lives alongside the Swift package;
 retain the existing package build and app harness. Run this lane with
 `xcodebuild test` and retain its `.xcresult` and failure screenshots/video.
 Apple documents separate-process UI tests, macOS keyboard/mouse support and
@@ -133,9 +136,9 @@ runner supports the entire setup requires a separate proof run.
   Stop, Cancel/restart, quiet lead/tail, stereo right-only and source switching.
   Use the fixed synthetic fixture as the repeatable gate; benchmark private old
   recordings locally without checking their audio/transcripts into the PR.
-- **Then:** XCUITest owns settings, launch/relaunch, destination activation,
-  shortcut, Escape, retry and first-run permission accept/deny workflows. Preserve
-  videos and timing evidence. Keep physical-key confirmation until the UI-test
+- **Implemented baseline:** XCUITest owns settings, launch/relaunch, destination activation,
+  shortcut, Escape and retry. First-run permission accept/deny remains proposed.
+  Preserve results and timing evidence. Keep physical-key confirmation until the UI-test
   runner demonstrates actual cross-app delivery on this host.
 - **Later, only if needed:** a custom deterministic virtual driver. Apple's
   minimal Audio Server plug-in sample publishes stereo float PCM at 44.1/48 kHz.

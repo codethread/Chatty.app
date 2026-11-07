@@ -162,22 +162,27 @@ is never passed in command arguments or written to debug logs.
 
 The panel exposes HTTP failures, held replies, input failures, request payloads,
 saved-recording retry/cancel/copy, and the settings window. The CLI drives the
-same running controllers and can operate actual AppKit controls by label:
+same running controllers. XCUITest drives the actual AppKit controls:
 
 ```sh
-python3 scripts/chatty-debug.py --help
-python3 scripts/chatty-debug.py start
-python3 scripts/chatty-debug.py wait --phase listening
-python3 scripts/chatty-debug.py inject --committed 'A complete sentence.' --partial 'live words'
-python3 scripts/chatty-debug.py stop
-python3 scripts/chatty-debug.py wait --phase complete
+./scripts/chatty-debug --help
+./scripts/chatty-debug start
+./scripts/chatty-debug wait --phase listening
+./scripts/chatty-debug inject --committed 'A complete sentence.' --partial 'live words'
+./scripts/chatty-debug stop
+./scripts/chatty-debug wait --phase complete
+./scripts/test-ui.sh
 ./scripts/check.sh
 ```
 
-`check.sh` runs locked Swift checks, a signed production archive build, and 29
-scenarios in its own signed debug app and sandbox. It includes local-model audio
-replay; `--skip-audio` omits the model-dependent scenarios. It writes a JSON report
-and own-view PNG artifacts, quits only its app, and leaves user builds alone.
+The control CLI is Swift; no separate scripting runtime is required. `check.sh`
+runs locked Swift checks, a signed production archive build, and native XCUITest
+workflows in a separate signed debug app with fresh storage per test. Full Xcode
+and an unlocked desktop are required. Approve Xcode's first-run UI Automation
+prompt; the suite never changes TCC permissions. It includes cached-model audio
+replay; `--skip-audio` explicitly excludes that contract. Xcode's `.xcresult`
+contains test outcomes, state attachments and failure screenshots. The suite
+quits its own app and leaves user builds alone.
 See [debug verification](docs/debug-verification.md) for evidence, commands and
 external testing boundaries.
 

@@ -1,0 +1,8 @@
+#!/bin/bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+if [[ ! -x .build/debug/chatty-debug ]]; then
+    echo 'Build the native CLI first: swift build --product chatty-debug' >&2
+    exit 1
+fi
+exec .build/debug/chatty-debug "$@"

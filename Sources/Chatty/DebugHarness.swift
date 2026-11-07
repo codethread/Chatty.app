@@ -84,7 +84,7 @@ final class DebugHarness {
     struct Command: Decodable {
         enum Action: String, Decodable {
             case start, stop, cancel, toggle, inject, level, inputFailure, inputFaults, releasePreparation
-            case fake, releaseRequests, settings, reset, showPasteTarget, clearPasteTarget, globals, replayAudio, render, quit
+            case fake, releaseRequests, settings, reset, showPasteTarget, clearPasteTarget, globals, selectAudioFile, replayAudio, render, quit
             case transcribeRecording, cancelTranscription, retryTranscription, copyRecording, clearRecordingError
             case ui, vocabulary
             case shortcutKey, resetShortcut, nativeHotkey
@@ -320,13 +320,13 @@ final class DebugHarness {
             case .clearRecordingError: try history.clearError(id)
             default: break
             }
-        case .replayAudio:
+        case .selectAudioFile, .replayAudio:
             guard !controller.isActive, let path = command.audioPath, path.hasPrefix("/") else {
                 throw DebugInputError.injected("Supply an absolute audioPath while idle")
             }
             input.audioFile.audioURL = URL(fileURLWithPath: path)
             input.source = .audioFile
-            Task { await controller.start() }
+            if command.action == .replayAudio { Task { await controller.start() } }
         case .render:
             let name = command.view ?? "overlay"
             let url = store.appDirectory.appendingPathComponent("Artifacts/\(name)-\(UUID().uuidString).png")

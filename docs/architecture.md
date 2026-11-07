@@ -168,6 +168,11 @@ flowchart TD
   The fake's held replies and injected input gates let scenarios wait for real
   events, cancel and then release stale work. The CLI has bounded request lists
   and explicit full-payload expansion. Debug global shortcuts start disabled.
+  The [native Swift control client](../Sources/ChattyHarness/HarnessClient.swift) is shared by the developer CLI and XCUITest's
+  observations. XCUITest drives AppKit controls in a separate process; fixture
+  setup and faults use the authenticated API. A separate native editor verifies
+  production keyboard paste. Audio-file selection can configure a replay without
+  starting it, so UI tests still press the real Start button.
   See [debug verification](debug-verification.md) for repeatable checks and
   external microphone/API/desktop boundaries.
 - AppKit and session coordination use the main actor. The audio tap owns copies
