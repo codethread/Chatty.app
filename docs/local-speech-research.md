@@ -76,6 +76,20 @@ Later process loads from Core ML's cache were about 0.13–0.25 seconds. Use
 **Prepare local model** before judging the first spoken result. A production
 rollout should prepare before the user begins speaking.
 
+Sentence boundaries use a quiet-office pause rule: after speech, about one
+second below -50 dBFS flushes and commits the current utterance, adding a full
+stop if the model supplied no terminal punctuation. Recording continues and
+decoder state resets for the next utterance, with weights still loaded. Short
+pauses do not close an utterance. This makes statements eligible for cleanup
+without requiring a question or stopping the recording. Stop also closes the
+last statement. A long pause in the middle of a thought will therefore produce
+a full stop; this is an audio pause rule rather than semantic sentence detection.
+In a clock-paced replay with two statements separated by 1.6 seconds of silence,
+the first full stop appeared at 3.16 seconds and the second at 6.75 seconds,
+both before the 7.25-second recording ended. Both statements retained all their
+words. The pause/full-stop change passes all 33 tests, including regressions for
+short pauses, existing punctuation, final-word flushing and continued dictation.
+
 The existing AAC recorder, waveform, overlay and cleanup pipeline are shared.
 Complete recognized sentences enter cleanup while the unfinished tail remains
 visible. Stop drains input and flushes the last model chunk. Cancel joins the
@@ -146,8 +160,8 @@ benchmark. Apple packet input is restricted to 16 kHz mono and converted to
 Int16; supplying Float32 to SpeechAnalyzer triggers a framework precondition.
 This was a harness error, corrected before the Apple results above.
 
-Validation: `swift build`, all 27 existing tests, the same 27 tests with
-`CHATTY_DEBUG_PANEL`, release demo compilation, app signing verification, and
+Validation: `swift build`, all 33 tests, release demo compilation,
+app signing verification, and
 the file/GUI checks described above. Full builds and test suites used `qlock`
 on `/tmp/agent-cpu.lock`.
 

@@ -95,8 +95,12 @@ flowchart TD
   Support cache and loads them off the main actor. The demo's microphone and
   file sources share that recognizer. Sessions reset encoder/decoder state while
   retaining loaded models. Small capture packets accumulate into 560 ms chunks;
-  cached encoder context spans chunks. Complete sentences enter cleanup; the
-  growing tail stays provisional. Stop flushes the remaining model chunk before
+  cached encoder context spans chunks within an utterance. After speech, about
+  one second below -50 dBFS closes the utterance: flush remaining audio, add a
+  full stop unless terminal punctuation is already present, commit the text,
+  and reset decoding state for the next utterance without stopping capture.
+  Shorter pauses remain in the same utterance. Complete sentences enter cleanup;
+  the growing tail stays provisional. Stop also closes the final utterance before
   completing the event stream. Cancellation joins inference before a new session
   can reset its state. Transcription-only demo mode sends no text to OpenAI.
 - Only stable complete sentences enter cleanup during dictation; provisional

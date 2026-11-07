@@ -81,6 +81,9 @@ Choose a **Speech recognition source**:
   and loads it into memory. Prepare before speaking; initial Core ML preparation
   can take several seconds. Weights stay loaded between sessions. Models live in
   `~/Library/Application Support/FluidAudio/Models/nemotron-streaming/560ms/`.
+  A pause of about one second closes the sentence with a full stop and keeps
+  listening. Existing question/exclamation marks are preserved; shorter pauses
+  stay within the same utterance. Stop also punctuates the final statement.
 - **Microphone · Apple SpeechAnalyzer** uses the production recognizer for comparison.
 - **Typed text** enables the text editor and **Load sample → Stream text**.
 - **Replay audio…** selects a local audio file and sends it through Nemotron in
