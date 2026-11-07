@@ -51,6 +51,10 @@ struct CorrectionBatch: Equatable, Sendable {
     let preservedText: String
     let text: String
     fileprivate let revision: UUID
+
+    var range: NSRange {
+        NSRange(location: preservedText.utf16.count, length: text.utf16.count)
+    }
 }
 
 /// Tracks raw recognition independently of cleanup, whose sentence boundaries

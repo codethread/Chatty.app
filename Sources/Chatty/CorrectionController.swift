@@ -13,7 +13,7 @@ final class CorrectionController {
     private(set) var document = TranscriptCorrections()
     var settings: CorrectionSettings = .default
     var contextWidth: CGFloat = TranscriptLayout.defaultWidth
-    var onChange: ((TranscriptCorrections) -> Void)?
+    var onChange: ((TranscriptCorrections, NSRange?) -> Void)?
     var onError: ((Error) -> Void)?
 
     init(corrector: any TranscriptCorrecting) {
@@ -25,7 +25,7 @@ final class CorrectionController {
         if let activeBatch, !document.contains(activeBatch) {
             cancel()
         }
-        onChange?(document)
+        publishChanges()
         startWorker()
     }
 
@@ -39,13 +39,18 @@ final class CorrectionController {
         worker?.cancel()
         worker = nil
         activeBatch = nil
+        publishChanges()
     }
 
     func reset() {
         cancel()
         failure = nil
         document = TranscriptCorrections()
-        onChange?(document)
+        publishChanges()
+    }
+
+    private func publishChanges() {
+        onChange?(document, activeBatch?.range)
     }
 
     private func startWorker() {
@@ -60,16 +65,19 @@ final class CorrectionController {
                     return
                 }
                 self.activeBatch = batch
+                self.publishChanges()
                 do {
                     let corrected = try await self.corrector.correct(batch.text, settings: self.settings)
                     try Task.checkCancellation()
                     self.document.apply(corrected, to: batch)
-                    self.onChange?(self.document)
+                    self.activeBatch = nil
+                    self.publishChanges()
                 } catch {
                     if Task.isCancelled { return }
                     self.failure = error
                     self.activeBatch = nil
                     self.worker = nil
+                    self.publishChanges()
                     self.onError?(error)
                     return
                 }

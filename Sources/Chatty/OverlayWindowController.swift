@@ -68,8 +68,8 @@ final class OverlayWindowController: NSWindowController {
         showCentered()
     }
 
-    func updateCorrections(_ document: TranscriptCorrections) {
-        content.setCorrections(document)
+    func updateCorrections(_ document: TranscriptCorrections, activeRange: NSRange?) {
+        content.setCorrections(document, activeRange: activeRange)
         if let window, window.isVisible, let screen = window.screen ?? NSScreen.main {
             layoutOverlay(on: screen)
         }
@@ -259,7 +259,7 @@ private final class DictationOverlayView: NSVisualEffectView {
         retry.isHidden = !canRetry
     }
 
-    func setCorrections(_ document: TranscriptCorrections) {
+    func setCorrections(_ document: TranscriptCorrections, activeRange: NSRange? = nil) {
         let paragraph = NSMutableParagraphStyle()
         paragraph.minimumLineHeight = transcriptLineHeight
         paragraph.maximumLineHeight = transcriptLineHeight
@@ -279,6 +279,9 @@ private final class DictationOverlayView: NSVisualEffectView {
         if !document.tail.isEmpty {
             if text.length > 0 { text.append(NSAttributedString(string: " ", attributes: attrs)) }
             text.append(NSAttributedString(string: document.tail, attributes: attrs))
+        }
+        if let activeRange {
+            text.addAttribute(.backgroundColor, value: NSColor.systemBlue.withAlphaComponent(0.25), range: activeRange)
         }
         transcript.textStorage!.setAttributedString(text)
         if text.length == 0 {

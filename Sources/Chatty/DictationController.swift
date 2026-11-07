@@ -36,9 +36,9 @@ final class DictationController {
         self.corrections = corrections
         self.overlay = overlay
         self.recordings = recordings
-        corrections.onChange = { [weak self] document in
+        corrections.onChange = { [weak self] document, activeRange in
             guard let self else { return }
-            self.overlay.updateCorrections(document)
+            self.overlay.updateCorrections(document, activeRange: activeRange)
             self.corrections.contextWidth = self.overlay.transcriptWidth
             self.onStateChange?()
         }

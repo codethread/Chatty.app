@@ -7,7 +7,7 @@ Menu-bar-only macOS dictation helper.
 - Runs as a menu bar app, not a normal Dock app.
 - Double-tap **left Shift** to start recording from the default microphone.
 - See live on-device transcription in a scrolling bottom-center overlay.
-- Complete sentences are tidied with recent transcript context through OpenAI's Responses API using `gpt-5.4-mini` with reasoning disabled; yellow marks pending cleanup and green marks corrected text.
+- Complete sentences are tidied with recent transcript context through OpenAI's Responses API using `gpt-5.4-mini` with reasoning disabled; blue marks the passage currently being corrected, yellow marks queued speech, and green marks corrected text.
 - The overlay grows from one line to five wrapped lines, then scrolls older text upward. Its waveform follows your microphone level.
 - Double-tap **left Shift** again to finalize, save the recording and transcript, copy and paste the text into the original app, and clear the overlay.
 - Press **Escape** while recording to copy the currently visible text and clear the overlay, canceling pending cleanup and discarding the unsaved audio.

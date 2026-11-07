@@ -35,12 +35,14 @@ struct TranscriptCorrectionsTests {
         #expect(first.text == "Um, use Vaselle.")
 
         document.update(TranscriptSnapshot(committedText: "Um, use Vaselle. That's for sale. Versell. VER C E L. That correction was for the dictation.", partialText: "And now um"))
+        #expect((document.text as NSString).substring(with: first.range) == first.text)
         let appliedFirst = document.apply("Use Vaselle.", to: first)
         #expect(appliedFirst)
         let next = try #require(document.nextBatch(contextStart: 0))
         #expect(next.text == "Use Vaselle. That's for sale. Versell. VER C E L. That correction was for the dictation.")
 
         document.update(TranscriptSnapshot(committedText: "Um, use Vaselle. That's for sale. Versell. VER C E L. That correction was for the dictation. And now um another thought.", partialText: "Still speaking"))
+        #expect((document.text as NSString).substring(with: next.range) == next.text)
         let appliedNext = document.apply("Use VERCEL.", to: next)
         #expect(appliedNext)
         #expect(document.text == "Use VERCEL. And now um another thought. Still speaking")
@@ -69,6 +71,7 @@ struct TranscriptCorrectionsTests {
         let next = try #require(document.nextBatch(contextStart: contextStart))
 
         #expect(next.text == "Use Vaselle. That's for sale. VER C E L. That correction was for the dictation.")
+        #expect((document.text as NSString).substring(with: next.range) == next.text)
         document.apply("Use VERCEL.", to: next)
         #expect(document.text == "An older 👩🏽‍💻 thought.\n\nUse VERCEL.")
         #expect(document.nextBatch(contextStart: 0) == nil)

@@ -95,7 +95,10 @@ flowchart TD
   wrapped lines (default three), expanded back to a whole sentence, and all
   pending complete speech even when that exceeds the window. Earlier corrected
   text remains fixed. One request runs at a time, and its reply supplies the
-  corrected context for the next batch. Replies contain plain text; the dictionary
+  corrected context for the next batch. The controller publishes the active
+  batch's UTF-16 range with the document: the overlay highlights that full
+  passage blue, queued speech yellow, and completed text green. The active
+  range clears on completion, cancellation or failure. Replies contain plain text; the dictionary
   is edited only by the user. Stop finalizes the remaining tail, awaits cleanup,
   saves real recordings, copies the corrected transcript, clears the overlay,
   and pastes into the original app in production.
