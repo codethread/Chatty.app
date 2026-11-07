@@ -15,10 +15,10 @@ Chatty is a Swift/AppKit macOS menu-bar-only dictation app. It targets recent Ap
 A **test build for the user** is the real menu-bar app with microphone input and an incremented build ID:
 
 ```sh
-./scripts/build-app.sh --no-debug --no-open
+./scripts/build-app.sh --no-debug
 ```
 
-This installs `/Applications/Chatty <N>.app`. Leave it unopened unless the user asks to launch it, so installing a build does not steal focus.
+This installs and opens `/Applications/Chatty <N>.app`. Open requested test builds by default; use `--no-open` only when the user asks to leave the build unopened.
 
 Use `./scripts/run-debug.sh` for agent testing with the typed-input debug panel. Provide a debug-panel build to the user only when explicitly requested. The build script's bare default enables that panel, so always pass `--no-debug` for user test builds.
 
