@@ -1,7 +1,10 @@
 # Debug verification
 
-Acceptance means complete workflows in the running application. Swift tests
-support specific logic; their count does not establish integration correctness.
+Acceptance combines representative workflows in the running application with
+variant coverage in faster logic and component-I/O tests. Keep the workflow
+checks for each mechanism; test response, format and state variants below UI
+once its wiring is established. The [verification map](verification.md#choose-the-lowest-layer-that-proves-the-behavior)
+assigns each behavior to its layer and records unproved boundaries.
 The native XCUITest bundle drives real AppKit controls in a separate process.
 The authenticated harness API supplies fixtures/faults and observes state and
 posted HTTP bytes. It also opens the shortcut-capture panel for the keyboard
@@ -12,9 +15,11 @@ contract. It does not click controls on the UI suite's behalf.
 On an unlocked macOS 26 Apple Silicon Mac with full Xcode selected:
 
 ```sh
-./scripts/test-ui.sh
 ./scripts/check.sh
 ```
+
+For a native-UI-only pass, use `./scripts/test-ui.sh`. The full gate above already
+runs it; there is no need to run both for the same change.
 
 `test-ui.sh` builds and signs `build/Chatty UITest.app`, then runs
 `ChattyUITests.xcodeproj` with `xcodebuild test`. The main app stays a Swift
@@ -41,7 +46,16 @@ certificate and set `CHATTY_DEBUG_SIGN_IDENTITY` to its identity when packaging;
 the script fails if that identity is unavailable. No certificate is created and
 no code-signing requirement or TCC check is weakened by the tooling.
 `./scripts/check.sh --no-build` still runs the Swift/release checks, then reuses
-those UI artifacts. A normal run is required after changing the app or UI tests.
+those UI artifacts. A normal run is required after changing the app. For
+UI-test-only changes, rebuild the runner separately before using `--no-build`;
+this compiles the changed tests while preserving the unchanged app's grant:
+
+```sh
+qlock exec --lock /tmp/agent-cpu.lock -w 60 -- xcodebuild build-for-testing \
+  -project ChattyUITests.xcodeproj -scheme ChattyUITests \
+  -destination 'platform=macOS,arch=arm64' -derivedDataPath build/UITests
+./scripts/check.sh --no-build
+```
 
 The default audio contract requires the already downloaded fixed Nemotron model
 in Chatty's shared cache. Use the debug panel's Speech Recognition settings to
@@ -58,6 +72,28 @@ Xcode failure screenshots. Open a result with `open build/ChattyUI-….xcresult`
 Test workspaces remain available for inspecting config, metadata and AAC files;
 their absolute paths are recorded in the attached final state.
 They contain only the synthetic fixtures unless explicitly changed by a developer.
+
+## Use focused tests during development
+
+Run the smallest suite owning the changed behavior first. For example:
+
+```sh
+swift test -Xswiftc -DCHATTY_DEBUG_PANEL --filter DictationControllerTests
+swift test -Xswiftc -DCHATTY_DEBUG_PANEL --filter MicrophoneCaptureTests
+swift test -Xswiftc -DCHATTY_DEBUG_PANEL --filter CorrectionSettingsTests
+```
+
+The controller suite uses real loopback HTTP and temporary recording files with
+scripted input and a presentation probe. It covers the HTTP/input failure
+matrices without launching a desktop app. The capture suite runs AVFoundation
+processing on supplied buffers; it does not acquire an input device. Pure
+transcript/settings tests need neither recognizers nor models.
+
+Focused tests need no CPU lock. Run full suites through `qlock` on
+`/tmp/agent-cpu.lock`; `check.sh` and `test-ui.sh` already lock their expensive
+commands. Use the complete gate for the finished change, including the native
+audio and desktop contracts. A green focused run does not close hardware,
+permissions or live-service gaps, and `--skip-audio` must remain explicit.
 
 ## Coverage
 

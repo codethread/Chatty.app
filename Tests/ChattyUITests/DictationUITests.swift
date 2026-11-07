@@ -144,56 +144,45 @@ final class DictationUITests: XCTestCase {
         XCTAssertEqual(state.pasteTarget, "NEW_SENTENCE")
     }
 
-    func testPreparationCancelAndInputFailures() async throws {
+    func testPreparationCancelAndStopFailure() async throws {
         select(panel.popUpButtons["Input fault"], "Hold preparation")
         panel.buttons["Start dictation"].click()
         _ = try await client.wait(["phase": "preparing"])
         panel.buttons["Cancel"].click()
         _ = try await client.wait(["phase": "idle"])
         select(panel.popUpButtons["Input fault"], "No input fault")
-        try await start(); panel.buttons["Cancel"].click()
-        _ = try await client.wait(["phase": "idle"])
-        for stage in ["start", "stream", "stop", "cancel"] {
-            try await client.command("reset", ["clearData": true])
-            if stage == "start" {
-                select(panel.popUpButtons["Input fault"], "Fail preparation")
-                panel.buttons["Start dictation"].click()
-            } else {
-                try await start(); inject("Preserve this recording.")
-                switch stage {
-                case "stream": select(panel.popUpButtons["Input fault"], "Fail stream")
-                case "stop":
-                    select(panel.popUpButtons["Input fault"], "Fail Stop")
-                    panel.buttons["Stop dictation"].click()
-                default:
-                    select(panel.popUpButtons["Input fault"], "Fail Cancel")
-                    panel.buttons["Cancel"].click()
-                }
-            }
-            let failed = try await client.wait(["phase": "failed"])
-            XCTAssertTrue(failed.overlay.visible)
-            XCTAssertTrue(failed.overlay.status.hasPrefix("Error:"))
-            XCTAssertTrue(liveText.exists)
-            XCTAssertTrue(failed.completed.isEmpty)
-            XCTAssertEqual(failed.recordingCount, stage == "start" ? 0 : 1)
-        }
+        // Capture failure variants live in DictationControllerTests; this proves
+        // the native Stop action and error presentation remain connected.
+        try await start(); inject("Preserve this recording.")
+        select(panel.popUpButtons["Input fault"], "Fail Stop")
+        panel.buttons["Stop dictation"].click()
+        let failed = try await client.wait(["phase": "failed"])
+        XCTAssertTrue(failed.overlay.visible)
+        XCTAssertTrue(failed.overlay.status.hasPrefix("Error:"))
+        XCTAssertTrue(liveText.exists)
+        XCTAssertTrue(failed.completed.isEmpty)
+        XCTAssertEqual(failed.recordingCount, 1)
+        _ = try audio(XCTUnwrap(failed.latestRecording))
     }
 
-    func testHTTPFailuresKeepAudioAndNeverPastePartialText() async throws {
-        for behavior in ["unauthorized", "rateLimited", "serverError", "malformed", "empty", "refused", "incomplete", "disconnect"] {
-            try await client.command("reset", ["clearData": true])
-            select(panel.popUpButtons["Fake HTTP response"], behavior)
-            try await start(); inject("A complete sentence.")
-            let failed = try await client.wait(["phase": "failed"])
-            XCTAssertTrue(failed.completed.isEmpty, behavior)
-            XCTAssertEqual(failed.pasteTarget, "", behavior)
-            XCTAssertEqual(failed.recordingCount, 1, behavior)
-            XCTAssertNotNil(failed.latestRecording?.transcriptionError, behavior)
-            XCTAssertTrue(failed.overlay.status.hasPrefix("Error:"), behavior)
-            XCTAssertTrue(liveText.exists, behavior)
-            XCTAssertTrue(failed.overlay.canCancel, behavior)
-            _ = try audio(XCTUnwrap(failed.latestRecording))
-        }
+    func testCleanupFailureKeepsAudioAndNeverPastesPartialText() async throws {
+        // One real HTTP failure proves app wiring; the full response/transport
+        // matrix exercises the controller, production client and files below UI.
+        try await start(); inject("First sentence.")
+        _ = try await client.wait(["corrected": "FIRST_SENTENCE"])
+        select(panel.popUpButtons["Fake HTTP response"], "incomplete")
+        inject("First sentence. Second sentence.")
+        let failed = try await client.wait(["phase": "failed"])
+        XCTAssertTrue(failed.completed.isEmpty)
+        XCTAssertTrue(failed.copied.isEmpty)
+        XCTAssertEqual(failed.pasteTarget, "")
+        XCTAssertEqual(failed.recordingCount, 1)
+        XCTAssertNotNil(failed.latestRecording?.transcriptionError)
+        XCTAssertTrue(failed.overlay.visible)
+        XCTAssertTrue(failed.overlay.status.hasPrefix("Error:"))
+        XCTAssertTrue(liveText.exists)
+        XCTAssertTrue(failed.overlay.canCancel)
+        _ = try audio(XCTUnwrap(failed.latestRecording))
     }
 
     func testSavedRecordingUploadRetryCancelAndCopy() async throws {

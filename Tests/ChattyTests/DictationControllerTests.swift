@@ -113,40 +113,75 @@ struct DictationControllerTests {
         }
     }
 
-    @Test(arguments: ["stream", "stop", "cleanup", "cancel"])
-    func failuresPreserveAudioAndNeverCompleteOrPaste(stage: String) async throws {
+    @Test(arguments: [FakeOpenAI.Behavior.unauthorized, .rateLimited, .serverError, .malformed, .empty, .refused, .incomplete, .disconnect])
+    func cleanupFailuresKeepAudioAndNeverCopyOrCompletePartialText(behavior: FakeOpenAI.Behavior) async throws {
         try await withController { fixture in
             await fixture.controller.start()
-            try fixture.input.inject(.init(committedText: "A sentence.", partialText: ""))
+            try fixture.input.inject(.init(committedText: "First sentence.", partialText: ""))
+            try await fixture.wait { fixture.controller.correctionState.correctedText == "FIRST_SENTENCE" }
+            await fixture.fake.configure(behavior: behavior)
+            try fixture.input.inject(.init(committedText: "First sentence. Second sentence.", partialText: ""))
+            try await fixture.wait { if case .failed = fixture.controller.phase { true } else { false } }
+            #expect(fixture.copies.isEmpty)
+            #expect(fixture.completions.isEmpty)
+            #expect(fixture.errors.count == 1)
+            let error = try #require(fixture.errors.first)
+            #expect(!error.isEmpty)
+            #expect(fixture.presentation.visible)
+            #expect(fixture.presentation.errorMessage == error)
+            let history = try fixture.store.load()
+            #expect(history.count == 1)
+            let saved = try #require(history.first)
+            #expect(saved.transcript == nil)
+            #expect(saved.transcriptionError == error)
+            #expect(try AVAudioFile(forReading: fixture.store.audioURL(for: saved)).length > 0)
+            #expect(await fixture.fake.receipts.last?.behavior == behavior)
+        }
+    }
+
+    @Test(arguments: ["start", "stream", "stop", "cancel"])
+    func inputFailuresPresentErrorsAndPreserveAvailableAudio(stage: String) async throws {
+        try await withController { fixture in
+            await fixture.fake.configure(behavior: .hold)
+            fixture.input.failStart = stage == "start"
+            await fixture.controller.start()
+            if stage != "start" {
+                try fixture.input.inject(.init(committedText: "A sentence.", partialText: ""))
+                try await fixture.wait { fixture.controller.transcript.committedText == "A sentence." }
+            }
             switch stage {
+            case "start": break
             case "stream": try fixture.input.injectFailure()
             case "stop": fixture.input.failStop = true; await fixture.controller.stop()
-            case "cleanup":
-                await fixture.fake.configure(behavior: .serverError)
-                try fixture.input.inject(.init(committedText: "Revised sentence.", partialText: ""))
             case "cancel": fixture.input.failCancel = true; await fixture.controller.cancel()
             default: preconditionFailure()
             }
             try await fixture.wait { if case .failed = fixture.controller.phase { true } else { false } }
+            #expect(fixture.copies == (stage == "cancel" ? ["A sentence."] : []))
             #expect(fixture.completions.isEmpty)
-            #expect(!fixture.errors.isEmpty)
-            let saved = try #require(fixture.store.load().first)
-            #expect(saved.transcriptionError != nil)
-            #expect(try AVAudioFile(forReading: fixture.store.audioURL(for: saved)).length > 0)
+            #expect(fixture.errors.count == 1)
+            #expect(fixture.presentation.visible)
+            #expect(fixture.presentation.errorMessage == fixture.errors.first)
+            let history = try fixture.store.load()
+            #expect(history.count == (stage == "start" ? 0 : 1))
+            if stage != "start" {
+                let saved = try #require(history.first)
+                #expect(saved.transcriptionError == fixture.errors.first)
+                #expect(try AVAudioFile(forReading: fixture.store.audioURL(for: saved)).length > 0)
+            }
         }
     }
 
-    @Test func emptySpeechIsAnErrorAndPreparationFailureDoesNotCreateHistory() async throws {
+    @Test func preparationFailureAllowsRestartAndEmptySpeechNeverCompletes() async throws {
         try await withController { fixture in
             fixture.input.failStart = true
             await fixture.controller.start()
-            #expect(!fixture.controller.isActive)
-            let history = try fixture.store.load()
-            #expect(history.isEmpty)
             fixture.input.failStart = false
             await fixture.controller.start()
+            #expect(fixture.controller.phase == .listening)
             await fixture.controller.stop()
             #expect(fixture.errors.last?.contains("No speech") == true)
+            #expect(fixture.copies.isEmpty)
             #expect(fixture.completions.isEmpty)
         }
     }
@@ -199,6 +234,7 @@ final class PresentationProbe: DictationPresenting {
     var document = TranscriptCorrections()
     var activeRange: NSRange?
     var visible = false
+    var errorMessage: String?
     var level: Float = 0
     var bytes: Int64 = 0
     func showPreparing() { visible = true }
@@ -208,7 +244,7 @@ final class PresentationProbe: DictationPresenting {
     func updateFileSize(_ bytes: Int64) { self.bytes = bytes }
     func showProcessing(canCancel: Bool, canRetry: Bool, message: String) { visible = true }
     func showSuccess(message: String) { visible = true }
-    func showError(_ message: String, canRetry: Bool) { visible = true }
+    func showError(_ message: String, canRetry: Bool) { visible = true; errorMessage = message }
     func close() { visible = false }
 }
 

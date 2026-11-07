@@ -1,4 +1,4 @@
-# Verification checklist
+# Verification and the testing pyramid
 
 Checked items have executed evidence; unchecked items are verification gaps.
 Update affected items when behavior or tests change, naming the actual I/O boundary.
@@ -12,6 +12,36 @@ The native suite is [DictationUITests](../Tests/ChattyUITests/DictationUITests.s
 [ChattyTests](../Tests/ChattyTests) contains both logic and real component I/O;
 its framework/folder name alone does not identify the boundary tested.
 See the [testing runbook](debug-verification.md) for execution procedures.
+
+## Choose the lowest layer that proves the behavior
+
+Keep a small maintained workflow test across each real mechanism, then exercise
+its variants at the lowest layer that can detect the relevant regression. A
+past successful run is evidence, not a reason to retire that workflow test.
+When moving cases down, preserve their outcomes (saved audio, errors, copy/paste,
+session ownership), run the replacement tests, and keep the native check for
+control wiring and presentation. The full gate runs both layers.
+
+| Mechanism retained at the higher layer | Variants owned by faster tests |
+| --- | --- |
+| File replay through **each** recognizer, conversion/AAC, cleanup and saved output: `testAudioEngineSwitchAppliesToNextSession` | Buffer ownership, sample rates/channels and metering: `MicrophoneCaptureTests`; recognition revisions, punctuation and pause boundaries: `RecognitionTranscriptTests`, `LocalSpeechTranscriptTests`, `SpeechPauseDetectorTests`. |
+| Native streaming/Stop, Cancel/restart and preparation cancellation | Queue/context/revision handling, stale replies and session ownership: `DictationControllerTests`, `TranscriptCorrectionsTests`, `TranscriptLayoutTests`. |
+| One incomplete HTTP response and one Stop failure shown in the running app | All eight HTTP/response failures and all four input-failure stages, including retained audio and completion suppression: `DictationControllerTests`. These are component tests with real loopback HTTP/files and substituted capture/presentation. |
+| Native saved-recording Transcribe/Retry, Cancel and Copy | Multipart bytes/vocabulary, persisted errors, retry and background ownership: `FakeOpenAIIntegrationTests`, `RecordingTranscriptionControllerTests`. |
+| Settings validation, Save/Cancel/Reset and relaunch | Invalid dictionary/context variants and instruction encoding: `CorrectionSettingsTests`; file persistence/retention/corruption: `PersistenceTests`. |
+| Cross-app shortcut/Escape and production paste with clipboard restoration | Timing/modifier/key variants: `ShortcutTests`. Keep desktop tests because constructed events cannot prove global delivery or focus. |
+
+Pure parsing/state tests come first; real component I/O comes next; native
+workflows prove app/platform wiring. Hardware and live-service checks cover
+boundaries these layers substitute. Do not multiply UI scenarios for every
+response, text, format or timing variant. Add a higher-layer case when it crosses
+a different boundary or reveals a wiring failure lower tests cannot observe.
+
+**Microphone evidence is still incomplete:** file replay bypasses the real
+input tap, and direct buffers do not prove device acquisition or shutdown. Keep
+the physical/virtual-input gaps below until that mechanism is exercised. Once
+it is, retain a representative capture-to-output workflow and keep format/text
+variants in the existing faster suites.
 
 ## Install, launch and grant access
 
@@ -27,7 +57,7 @@ See the [testing runbook](debug-verification.md) for execution procedures.
 - [x] **Auto UI:** Apple default, Cancel and missing-model Save validation. `testSpeechSettingsDefaultCancelAndMissingModel`.
 - [x] **Auto UI + audio:** Cached Nemotron load, persisted selection, both recognizers and switching only the next session. `testAudioEngineSwitchAppliesToNextSession`.
 - [x] **One-off Auto IO / desktop check:** Cold download, progress, interrupted/resumed cache, readiness and native Save for both engines, 2026-11-07. Local records: `build/native-verification.json`, `build/speech-download-resume-verification.json`.
-- [ ] **Automated gap:** Maintained cold-download/resume and download-failure recovery lane. The ordinary suite uses cached weights.
+- [ ] **Automated IO gap:** Maintained cold-download readiness check; cache interruption/resume and download-failure variants belong in component I/O tests. The ordinary suite uses cached weights; the one-off record is not a maintained regression check.
 
 ## Start dictation and watch words arrive
 
@@ -49,20 +79,23 @@ See the [testing runbook](debug-verification.md) for execution procedures.
 
 ## Cancel and immediately start again
 
-- [x] **Auto UI:** Copy visible text, discard unsaved audio, reject released stale replies, cancel preparation and restart. `testCancelHeldReplyAndRestart`, `testPreparationCancelAndInputFailures`.
+- [x] **Auto UI:** Copy visible text, discard unsaved audio, reject released stale replies, cancel preparation and restart. `testCancelHeldReplyAndRestart`, `testPreparationCancelAndStopFailure`.
 - [x] **Auto UI / keyboard IO:** External-app Escape cancels injected dictation, copies the tail and creates no recording. `testCrossApplicationShortcutAndEscape`.
-- [x] **Unit/DI:** Session ownership and background-upload overlay leases. [DictationControllerTests](../Tests/ChattyTests/DictationControllerTests.swift), [RecordingTranscriptionControllerTests](../Tests/ChattyTests/RecordingTranscriptionControllerTests.swift).
-- [ ] **Automated audio gap:** Real-recognition Cancel/restart and early Stop in the maintained native suite; current native cancellation injects snapshots.
+- [x] **Auto IO + DI:** Session ownership and background-upload overlay leases, with real loopback HTTP/files and substituted capture/presentation. [DictationControllerTests](../Tests/ChattyTests/DictationControllerTests.swift), [RecordingTranscriptionControllerTests](../Tests/ChattyTests/RecordingTranscriptionControllerTests.swift).
+- [ ] **Automated audio gap:** Real-recognition Cancel/restart and early Stop. Exercise recognition-service lifecycle without desktop UI; retain a representative native cancellation check when connected. Current native cancellation injects snapshots.
 - [ ] **Manual / hardware:** Cancel actual capture, restart immediately and verify the old microphone stream stopped.
 
 ## Recover from recording or cleanup errors
 
-- [x] **Auto UI + HTTP/files:** Eight HTTP/response failures retain playable AAC/history, show errors and prevent partial paste. `testHTTPFailuresKeepAudioAndNeverPastePartialText` uses real URLSession against loopback.
-- [x] **Auto UI:** Injected preparation, stream, Stop and Cancel failures preserve available audio and show errors. `testPreparationCancelAndInputFailures` substitutes capture.
-- [x] **Auto IO:** Payload encoding, response parsing and held-request cancellation/reuse. [FakeOpenAIIntegrationTests](../Tests/ChattyTests/FakeOpenAIIntegrationTests.swift).
+- [x] **Auto UI + HTTP/files:** One incomplete response after a successful correction retains playable AAC/history, shows an error and prevents partial copy/paste. `testCleanupFailureKeepsAudioAndNeverPastesPartialText` uses real URLSession against loopback.
+- [x] **Auto UI:** Preparation Cancel/restart and an injected Stop failure prove native actions and error presentation. `testPreparationCancelAndStopFailure` substitutes capture and retains playable audio.
+- [x] **Auto IO + DI:** All eight HTTP/response failures (401, 429, 500, malformed, empty, refusal, incomplete, disconnect) after a successful correction retain playable AAC/error history, present errors and never copy or complete partial text. `cleanupFailuresKeepAudioAndNeverCopyOrCompletePartialText` in [DictationControllerTests](../Tests/ChattyTests/DictationControllerTests.swift) uses the production client with real loopback HTTP/files; capture/presentation are substituted.
+- [x] **Auto IO + DI:** Preparation, stream, Stop and Cancel failures present errors and preserve available playable audio; preparation failure creates no history. `inputFailuresPresentErrorsAndPreserveAvailableAudio` in [DictationControllerTests](../Tests/ChattyTests/DictationControllerTests.swift). A failed Cancel still copies the visible text as intended, but never completes/pastes.
+- [x] **Auto IO:** Posted payload, multipart bytes and held-request cancellation/reuse. [FakeOpenAIIntegrationTests](../Tests/ChattyTests/FakeOpenAIIntegrationTests.swift).
+- [x] **Unit:** Response-shape variants reject partial/refused/empty/malformed output; authentication errors redact the key. [OpenAITranscriptCorrectorTests](../Tests/ChattyTests/OpenAITranscriptCorrectorTests.swift).
 - [ ] **Manual / hardware:** Input-device change/disconnection, capture shutdown, error presentation, retained audio and recovery.
 - [ ] **Manual / service IO:** Live OpenAI authentication, rate limiting, network loss, output quality and latency. Loopback establishes wire/lifecycle behavior.
-- [ ] **Automated audio gap:** Silence-only/missing-source files through the recognizer in the maintained native suite. Controller/punctuation no-speech logic has focused checks.
+- [ ] **Automated audio gap:** Silence-only/missing-source files through the recognition service belong in component audio tests. Controller/punctuation no-speech logic has focused checks; another full desktop workflow is not required for every file variant.
 
 ## Re-transcribe, retry and copy a saved recording
 
@@ -92,10 +125,18 @@ See the [testing runbook](debug-verification.md) for execution procedures.
 
 ## Evidence and maintenance
 
-Last full gate: **2026-11-07**, `./scripts/check.sh --no-build`; 10 native UI workflows,
-zero failures/skips, plus Swift logic/component-I/O checks and signed archive validation.
-Local result: `build/ChattyUI-20261107-202359.xcresult`. UI artifacts were built and
-authorized first; `--no-build` preserves their ad-hoc Accessibility identity.
+Last full gate: **2026-11-07**, `./scripts/check.sh --no-build`; 60 Swift test
+functions in 14 suites, 10 native UI workflows, zero failures/skips, and signed
+archive validation. The UI runner was rebuilt with `xcodebuild build-for-testing`
+first; app sources were unchanged, so `--no-build` preserved the authorized
+app's ad-hoc Accessibility identity.
+Local result: `build/ChattyUI-20261107-205329.xcresult`.
+
+The native run took 162 seconds, compared with 203 seconds in the previous
+full gate (`build/ChattyUI-20261107-202359.xcresult`) on this Mac. The two failure
+workflows took 22 seconds instead of 60. All eight cleanup and four input-failure
+variants remain in the component suite with real files/loopback HTTP where
+applicable. These are single-run timings, not a benchmark guarantee.
 
 Keep checked items tied to named tests or dated records. When a flow changes,
 update its coverage, actual I/O boundaries and remaining gaps. Execution procedures

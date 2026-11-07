@@ -22,19 +22,6 @@ struct FakeOpenAIIntegrationTests {
         }
     }
 
-    @Test(arguments: [FakeOpenAI.Behavior.unauthorized, .rateLimited, .serverError, .malformed, .empty, .refused, .incomplete, .disconnect])
-    func surfacesHTTPAndResponseFailures(behavior: FakeOpenAI.Behavior) async throws {
-        try await withFake { fake, url in
-            await fake.configure(behavior: behavior)
-            let corrector = OpenAITranscriptCorrector(credentials: OpenAICredentials(apiKey: FakeOpenAI.apiKey),
-                                                     endpoint: url.appendingPathComponent("v1/responses"))
-            do {
-                _ = try await corrector.correct("A statement.", settings: .default)
-                Issue.record("Expected \(behavior) to fail")
-            } catch { #expect(!error.localizedDescription.isEmpty) }
-        }
-    }
-
     @Test func cancellationEndsAHeldRequestAndTheSameClientCanSendAgain() async throws {
         try await withFake { fake, url in
             await fake.configure(behavior: .hold)
