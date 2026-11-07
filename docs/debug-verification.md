@@ -120,9 +120,11 @@ document. Its exact visible text matched the completed transcript; restoring the
 clipboard compared every representation successfully. Native evidence is recorded
 in `build/native-verification.json` and `build/Chatty-native-paste.rtf`.
 
-The custom shortcut did not toggle Chatty through the automated keypress API.
-Registration and direct Carbon dispatch pass, but those checks are not accepted
-as proof of actual cross-app keystrokes. A physical-key confirmation is pending.
+On 2026-11-07 the user confirmed that a physical Control–Option–Command–9
+keypress with another app focused opens Chatty's listening overlay. This verifies
+the custom shortcut across applications. Automated keypresses had not triggered
+it; registration and direct Carbon dispatch alone were not accepted as proof.
+The temporary binding was removed and debug global shortcuts disabled afterward.
 Actual microphone hardware and TCC prompts require a human. The API fake verifies
 wire/lifecycle behavior; real OpenAI output, authentication, latency and Keychain
 trust dialogs remain external checks for the later token. Apple recognition
