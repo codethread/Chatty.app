@@ -15,7 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let overlay = OverlayWindowController()
     private let openAICredentials = OpenAICredentials()
     #if CHATTY_DEBUG_PANEL
-    private let input = DebugTextInputService()
+    private let input = DebugDictationInputService()
     private lazy var debugCorrector = DebugTranscriptCorrector(credentials: openAICredentials)
     private lazy var corrections = CorrectionController(corrector: debugCorrector)
     private lazy var debugPanel = DebugPanelController(input: input, controller: dictation, corrector: debugCorrector,
@@ -584,6 +584,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+#if CHATTY_DEBUG_PANEL
+if CommandLine.arguments.dropFirst().first == "--benchmark-asr" {
+    Task { @MainActor in
+        do {
+            try await DebugASRBenchmark.run(Array(CommandLine.arguments.dropFirst(2)))
+            exit(0)
+        } catch {
+            FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
+            exit(1)
+        }
+    }
+    RunLoop.main.run()
+} else {
+    let appDelegate = AppDelegate()
+    NSApplication.shared.delegate = appDelegate
+    NSApplication.shared.run()
+}
+#else
 let appDelegate = AppDelegate()
 NSApplication.shared.delegate = appDelegate
 NSApplication.shared.run()
+#endif

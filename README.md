@@ -71,30 +71,58 @@ grant access again when prompted. Debug builds skip the reset unless
 ./scripts/build-app.sh --reset-permissions
 ```
 
-Debug builds compile `CHATTY_DEBUG_PANEL` and run as a regular Dock app with a resizable floating debug panel
-that opens at launch and can be reopened from the menu bar with **Show Debug
-Panel…**, Command-0, or its Dock icon. The debug build injects a text input service
-into the same `DictationController` and overlay used for real dictation. Start
-dictation and type in **Dictation text** to see live replacements, or choose
-**Load sample → Stream text** for word-by-word playback. Stop finalizes the
-visible text; Cancel copies the current text and discards the session. Both clear
-the overlay after copying to the clipboard. The debug input does not access the
-microphone or save recordings. Debug builds skip microphone and Accessibility
-startup permission prompts.
+Debug builds compile `CHATTY_DEBUG_PANEL` and open a floating control panel,
+available again through **Show Debug Panel…**, Command-0, or the Dock icon.
+The panel drives the same `DictationController` and overlay as production.
+Choose a **Speech recognition source**:
+
+- **Microphone · Nemotron 600M · 560 ms** (default) uses a local quantized Core ML
+  model through FluidAudio. **Prepare local model** downloads about 626 MB once
+  and loads it into memory. Prepare before speaking; initial Core ML preparation
+  can take several seconds. Weights stay loaded between sessions. Models live in
+  `~/Library/Application Support/FluidAudio/Models/nemotron-streaming/560ms/`.
+- **Microphone · Apple SpeechAnalyzer** uses the production recognizer for comparison.
+- **Typed text** enables the text editor and **Load sample → Stream text**.
+- **Replay audio…** selects a local audio file and sends it through Nemotron in
+  clock-paced 80 ms packets. The overlay updates during playback, then finalizes
+  and copies the transcript automatically. This does not play sound or save a
+  second recording. Stop flushes the supplied audio; Cancel discards the session.
+
+Microphone modes request microphone permission on first use and save recordings
+on Stop. Cancel copies visible text and discards unsaved audio. Both clear the
+overlay. The demo copies text without pasting it into another application.
+Debug builds skip startup microphone and Accessibility prompts.
 
 Choose a **Correction backend** in the debug panel:
 
-- **OpenAI REST** (default) runs the same direct `gpt-5.4-mini` request as production,
+- **Transcription only** (default) displays recognition without network cleanup.
+- **OpenAI REST** runs the same direct `gpt-5.4-mini` request as production,
   using your saved OpenAI API key. **Set API key…** replaces it in Keychain.
 - **Fake** waits one second, then uppercases each submitted passage without network access.
 - **Pi** uses the same mini model without reasoning for timing comparisons.
 
-The request log shows credential loading, sending, elapsed time, HTTP status,
+The log shows local partial transcripts, decode time and final flush time. For
+network cleanup it shows credential loading, sending, elapsed time, HTTP status,
 actual service tier, request ID, input, output, errors, and cancellation. The activity timer keeps
 running while a request is pending. Credentials are never logged. A macOS
 Keychain trust prompt can delay credential loading; approve access for the debug
 app if prompted. Reads happen off the UI thread and the key is cached in memory
 for subsequent requests. Cancelling also interrupts the wait for credentials.
+
+The local-recognition experiment and measurements are documented in
+[Local speech research](docs/local-speech-research.md). The release demo also has
+a file benchmark that emits JSON lines without opening the UI or calling cleanup:
+
+```sh
+qlock exec --lock /tmp/agent-cpu.lock -w 60 -- swift build -c release -Xswiftc -DCHATTY_DEBUG_PANEL
+.build/release/Chatty --benchmark-asr --help
+.build/release/Chatty --benchmark-asr nemotron sample.wav --realtime
+.build/release/Chatty --benchmark-asr apple sample.wav --realtime
+.build/release/Chatty --benchmark-asr parakeet sample.wav
+```
+
+The Apple packet benchmark requires 16 kHz mono input. Parakeet is a batch
+accuracy reference; Nemotron is the local streaming backend in the demo.
 
 Corrections run one request at a time while new speech keeps streaming. After
 each reply, the next request combines recent corrected text with all newly

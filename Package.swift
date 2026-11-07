@@ -7,9 +7,13 @@ let package = Package(
     products: [
         .executable(name: "Chatty", targets: ["Chatty"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.15.6")
+    ],
     targets: [
         .executableTarget(
             name: "Chatty",
+            dependencies: [.product(name: "FluidAudio", package: "FluidAudio")],
             path: "Sources/Chatty",
             exclude: ["Info.plist"]
         ),

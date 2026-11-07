@@ -7,13 +7,24 @@ import Synchronization
 
 @MainActor
 final class MicrophoneDictationService: DictationInputService {
+    enum Backend: Sendable {
+        case apple, nemotron
+    }
     private static let logger = Logger(subsystem: "local.chatty.Chatty", category: "Recording")
     private let locale: Locale
+    private let backend: Backend
+    private let localRecognizer: LocalSpeechRecognizer
     private var session: Session?
+    var onDiagnostic: (@MainActor @Sendable (String) -> Void)?
 
-    init(locale: Locale = .current) {
+    init(locale: Locale = .current, backend: Backend = .apple,
+         localRecognizer: LocalSpeechRecognizer = LocalSpeechRecognizer()) {
         self.locale = locale
+        self.backend = backend
+        self.localRecognizer = localRecognizer
     }
+
+    func prepareLocalModel() async throws { try await localRecognizer.prepare() }
 
     func start(recordingURL: URL) async throws -> AsyncThrowingStream<DictationEvent, Error> {
         if let session, !session.isStopped { throw MicrophoneError.alreadyRecording }
@@ -22,53 +33,78 @@ final class MicrophoneDictationService: DictationInputService {
         Self.logger.notice("Starting on-device dictation; destination=\(recordingURL.path, privacy: .public)")
 
         do {
-            guard SpeechTranscriber.isAvailable else { throw MicrophoneError.recognitionUnavailable }
             let granted = await AVCaptureDevice.requestAccess(for: .audio)
             try checkSession(session)
             guard granted else { throw MicrophoneError.microphoneDenied }
-            guard let locale = await SpeechTranscriber.supportedLocale(equivalentTo: locale) else {
-                throw MicrophoneError.unsupportedLocale(locale.identifier)
-            }
-            try checkSession(session)
-
-            let transcriber = SpeechTranscriber(locale: locale, preset: .timeIndexedProgressiveTranscription)
-            let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber])
-            try checkSession(session)
-            session.installationRequest = request
-            if let request { try await request.downloadAndInstall() }
-            try checkSession(session)
-            session.installationRequest = nil
-
-            let analyzer = SpeechAnalyzer(modules: [transcriber])
-            session.analyzer = analyzer
             let inputFormat = session.engine.inputNode.outputFormat(forBus: 0)
             guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
                 throw MicrophoneError.noAudioInput
             }
-            guard let analysisFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
-                compatibleWith: [transcriber], considering: inputFormat
-            ) else { throw MicrophoneError.noCompatibleFormat }
-            try checkSession(session)
-            try await analyzer.prepareToAnalyze(in: analysisFormat)
-            try checkSession(session)
+            let analysisFormat: AVAudioFormat
+            switch backend {
+            case .nemotron:
+                try await localRecognizer.prepare()
+                try checkSession(session)
+                analysisFormat = AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1)!
+                let diagnostic = onDiagnostic
+                let recognizer = localRecognizer
+                session.resultTask = Task { [weak self] in
+                    do {
+                        try await recognizer.run(
+                            input: session.analysis.stream, events: session.events.continuation,
+                            onDiagnostic: { message in await diagnostic?(message) }
+                        )
+                    } catch {
+                        self?.fail(error, session: session)
+                        throw error
+                    }
+                }
+            case .apple:
+                guard SpeechTranscriber.isAvailable else { throw MicrophoneError.recognitionUnavailable }
+                guard let locale = await SpeechTranscriber.supportedLocale(equivalentTo: locale) else {
+                    throw MicrophoneError.unsupportedLocale(locale.identifier)
+                }
+                try checkSession(session)
+
+                let transcriber = SpeechTranscriber(locale: locale, preset: .timeIndexedProgressiveTranscription)
+                let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber])
+                try checkSession(session)
+                session.installationRequest = request
+                if let request { try await request.downloadAndInstall() }
+                try checkSession(session)
+                session.installationRequest = nil
+
+                let analyzer = SpeechAnalyzer(modules: [transcriber])
+                session.analyzer = analyzer
+                guard let compatibleFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
+                    compatibleWith: [transcriber], considering: inputFormat
+                ) else { throw MicrophoneError.noCompatibleFormat }
+                analysisFormat = compatibleFormat
+                try checkSession(session)
+                try await analyzer.prepareToAnalyze(in: analysisFormat)
+                try checkSession(session)
+
+                session.resultTask = Task { [weak self] in
+                    do {
+                        var transcript = RecognitionTranscript()
+                        for try await result in transcriber.results {
+                            try Task.checkCancellation()
+                            transcript.replace(range: result.range, text: String(result.text.characters), isFinal: result.isFinal)
+                            session.events.continuation.yield(.transcript(transcript.snapshot))
+                        }
+                    } catch {
+                        self?.fail(error, session: session)
+                        throw error
+                    }
+                }
+                try await analyzer.start(inputSequence: session.analysis.stream)
+                try checkSession(session)
+            }
 
             let processor = try MicrophoneBufferProcessor(
                 recordingURL: recordingURL, inputFormat: inputFormat, analysisFormat: analysisFormat
             )
             session.hasRecording = true
-            session.resultTask = Task { [weak self] in
-                do {
-                    var transcript = RecognitionTranscript()
-                    for try await result in transcriber.results {
-                        try Task.checkCancellation()
-                        transcript.replace(range: result.range, text: String(result.text.characters), isFinal: result.isFinal)
-                        session.events.continuation.yield(.transcript(transcript.snapshot))
-                    }
-                } catch {
-                    self?.fail(error, session: session)
-                    throw error
-                }
-            }
             session.processingTask = Task { [weak self] in
                 do {
                     try await processor.run(
@@ -83,8 +119,6 @@ final class MicrophoneDictationService: DictationInputService {
                 }
             }
 
-            try await analyzer.start(inputSequence: session.analysis.stream)
-            try checkSession(session)
             let capture = Self.makeCaptureCallback(into: session.captured.continuation) { [weak self] error in
                 Task { @MainActor in self?.fail(error, session: session) }
             }
@@ -157,7 +191,9 @@ final class MicrophoneDictationService: DictationInputService {
         let task = Task { @MainActor in
             do {
                 try await session.processingTask?.value
+                session.analysis.continuation.finish()
                 if session.failure != nil || session.cancelled {
+                    session.resultTask?.cancel()
                     await session.analyzer?.cancelAndFinishNow()
                 } else {
                     try await session.analyzer?.finalizeAndFinishThroughEndOfInput()

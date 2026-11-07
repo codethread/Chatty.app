@@ -4,9 +4,10 @@ import Foundation
 @MainActor
 final class DebugTranscriptCorrector: TranscriptCorrecting {
     enum Backend: Int, CaseIterable {
-        case openAI, fake, pi
+        case transcriptionOnly, openAI, fake, pi
         var title: String {
             switch self {
+            case .transcriptionOnly: "Transcription only · no cleanup"
             case .openAI: "OpenAI REST · gpt-5.4-mini · Fast"
             case .fake: "Fake · uppercase after 1 second"
             case .pi: "Pi · gpt-5.4-mini"
@@ -14,7 +15,7 @@ final class DebugTranscriptCorrector: TranscriptCorrecting {
         }
     }
 
-    var backend: Backend = .openAI
+    var backend: Backend = .transcriptionOnly
     var onDiagnosticsChange: (() -> Void)?
     private(set) var diagnostics = "Requests use the configured cleanup prompt and word dictionary. Credentials are never logged.\n"
     private(set) var lastStage = "Ready"
@@ -40,6 +41,7 @@ final class DebugTranscriptCorrector: TranscriptCorrecting {
         let selected = backend
         let corrector: any TranscriptCorrecting
         switch selected {
+        case .transcriptionOnly: return text
         case .openAI: return try await direct.correct(text, settings: settings)
         case .fake: corrector = FakeTranscriptCorrector()
         case .pi: corrector = PiTranscriptCorrector()

@@ -3,11 +3,13 @@ import AppKit
 
 @MainActor
 final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextViewDelegate {
-    private let input: DebugTextInputService
+    private let input: DebugDictationInputService
     private let controller: DictationController
     private let corrector: DebugTranscriptCorrector
     private let onSetAPIKey: () -> Void
     private let backend = NSPopUpButton()
+    private let source = NSPopUpButton()
+    private let prepareButton = NSButton(title: "Prepare local model", target: nil, action: nil)
     private let requestStatus = NSTextField(labelWithString: "Ready")
     private let requestLog = NSTextView()
     private var statusTimer: Timer?
@@ -18,7 +20,7 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
     private let cancelButton = NSButton(title: "Cancel", target: nil, action: nil)
     private let streamButton = NSButton(title: "Stream text", target: nil, action: nil)
 
-    init(input: DebugTextInputService, controller: DictationController, corrector: DebugTranscriptCorrector,
+    init(input: DebugDictationInputService, controller: DictationController, corrector: DebugTranscriptCorrector,
          onSetAPIKey: @escaping () -> Void) {
         self.input = input
         self.controller = controller
@@ -42,7 +44,7 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
         let title = NSTextField(labelWithString: "Live dictation")
         title.font = .systemFont(ofSize: 22, weight: .semibold)
         let description = NSTextField(wrappingLabelWithString:
-            "Use typed text with the real OpenAI request, Pi, or the one-second uppercase fake. Stop or Escape copies the text and closes the overlay. No microphone is used. Live modes send your text to OpenAI."
+            "Compare local Nemotron with Apple speech recognition using your microphone, or replay typed text. Transcription only keeps speech and text on this Mac. OpenAI and Pi cleanup send text to OpenAI. Stop saves microphone recordings and copies text; Escape copies and discards audio."
         )
         description.font = .systemFont(ofSize: 12)
         description.textColor = .secondaryLabelColor
@@ -67,6 +69,13 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
         backend.target = self
         backend.action = #selector(changeBackend)
         backend.setAccessibilityLabel("Correction backend")
+        source.addItems(withTitles: DebugDictationInputService.Source.allCases.map(\.title))
+        source.target = self
+        source.action = #selector(changeSource)
+        source.setAccessibilityLabel("Speech recognition source")
+        configure(prepareButton, action: #selector(prepareModel))
+        let replayButton = NSButton(title: "Replay audio…", target: self, action: #selector(replayAudio))
+        replayButton.bezelStyle = .rounded
         let keyButton = NSButton(title: "Set API key…", target: self, action: #selector(setAPIKey))
         keyButton.bezelStyle = .rounded
         let clearButton = NSButton(title: "Clear log", target: self, action: #selector(clearLog))
@@ -100,10 +109,11 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
         let controls = NSStackView(views: [
             title,
             description,
+            row([source, prepareButton]),
             row([backend, keyButton]),
             scrollView,
             row([startButton, stopButton, cancelButton]),
-            row([streamButton, sampleButton]),
+            row([streamButton, sampleButton, replayButton]),
             status,
             row([requestStatus, clearButton]),
             logScroll
@@ -127,6 +137,14 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
 
         controller.onStateChange = { [weak self] in self?.updateControls() }
         corrector.onDiagnosticsChange = { [weak self] in self?.updateDiagnostics() }
+        input.local.onDiagnostic = { [weak self] message in
+            self?.recognitionLog += message + "\n"
+            self?.updateDiagnostics()
+        }
+        input.audioFile.onDiagnostic = input.local.onDiagnostic
+        input.audioFile.onFinished = { [weak controller] in
+            Task { await controller?.stop() }
+        }
         updateDiagnostics()
         updateControls()
         panel.center()
@@ -151,7 +169,7 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
     }
 
     func textDidChange(_ notification: Notification) {
-        input.updateText(textView.string)
+        if input.source == .typed { input.typed.updateText(textView.string) }
     }
 
     private func configure(_ button: NSButton, action: Selector) {
@@ -169,7 +187,11 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
 
     private func updateControls() {
         backend.isEnabled = !controller.isActive
-        startButton.isEnabled = !controller.isActive
+        source.isEnabled = !controller.isActive
+        prepareButton.isEnabled = !controller.isActive && !preparingModel
+        textView.isEditable = input.source == .typed
+        streamButton.isEnabled = input.source == .typed
+        startButton.isEnabled = !controller.isActive && (input.source != .audioFile || input.audioFile.audioURL != nil)
         stopButton.isEnabled = controller.isActive
         cancelButton.isEnabled = controller.isActive || !controller.transcript.text.isEmpty
         let count = controller.transcript.text.split(whereSeparator: \.isWhitespace).count
@@ -180,7 +202,7 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
     }
 
     private func updateDiagnostics() {
-        requestLog.string = corrector.diagnostics
+        requestLog.string = recognitionLog + corrector.diagnostics
         requestLog.scrollToEndOfDocument(nil)
         requestStatus.stringValue = corrector.activity
     }
@@ -189,13 +211,58 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
         corrector.backend = DebugTranscriptCorrector.Backend(rawValue: backend.indexOfSelectedItem)!
     }
 
+    private var recognitionLog = "Nemotron 600M · 560 ms chunks · local Core ML\n"
+    private var preparingModel = false
+
+    @objc private func changeSource() {
+        input.source = DebugDictationInputService.Source(rawValue: source.indexOfSelectedItem)!
+        updateControls()
+    }
+
+    @objc private func prepareModel() {
+        preparingModel = true
+        prepareButton.title = "Downloading/loading…"
+        updateControls()
+        Task {
+            let start = ContinuousClock.now
+            do {
+                try await input.local.prepareLocalModel()
+                recognitionLog += "Model ready in \(start.duration(to: .now).formatted(.units(allowed: [.seconds, .milliseconds])))\n"
+                prepareButton.title = "Model ready"
+            } catch {
+                recognitionLog += "Model failed: \(error.localizedDescription)\n"
+                prepareButton.title = "Retry model preparation"
+            }
+            preparingModel = false
+            updateDiagnostics()
+            updateControls()
+        }
+    }
+
+    @objc private func replayAudio() {
+        guard !controller.isActive else { return }
+        let picker = NSOpenPanel()
+        picker.allowsMultipleSelection = false
+        picker.canChooseDirectories = false
+        picker.message = "Replay speech locally in real time through Nemotron. No audio is uploaded."
+        picker.begin { [weak self] response in
+            guard response == .OK, let self, let url = picker.url else { return }
+            self.input.audioFile.audioURL = url
+            self.input.source = .audioFile
+            self.source.selectItem(at: DebugDictationInputService.Source.audioFile.rawValue)
+            self.recognitionLog += "Replaying \(url.lastPathComponent) in 80 ms packets\n"
+            self.updateControls()
+            self.startDictation()
+        }
+    }
+
     @objc private func setAPIKey() { onSetAPIKey() }
-    @objc private func clearLog() { corrector.clearDiagnostics() }
+    @objc private func clearLog() { recognitionLog = ""; corrector.clearDiagnostics() }
 
     @objc private func startDictation() {
         Task {
             await controller.start()
-            if controller.isActive { input.updateText(textView.string) }
+            if controller.isActive && input.source == .typed { input.typed.updateText(textView.string) }
         }
     }
 
@@ -211,7 +278,7 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
         let text = textView.string
         Task {
             if !controller.isActive { await controller.start() }
-            if controller.isActive { input.replay(text) }
+            if controller.isActive { input.typed.replay(text) }
         }
     }
 
@@ -225,7 +292,7 @@ final class DebugPanelController: NSWindowController, NSWindowDelegate, NSTextVi
         I can keep talking while the application preserves the entire transcript.
         The latest words should remain visible even after earlier sentences scroll away.
         """
-        input.updateText(textView.string)
+        if input.source == .typed { input.typed.updateText(textView.string) }
     }
 }
 #endif
