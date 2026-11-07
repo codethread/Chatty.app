@@ -1,278 +1,105 @@
 # Chatty
 
-Menu-bar-only macOS dictation helper.
+A macOS menu-bar dictation app with live on-device transcription, sentence cleanup
+through OpenAI, and paste into the app you were using. Requires macOS 26 or later
+on Apple Silicon.
 
-## Features
-
-- Runs as a menu bar app, not a normal Dock app.
-- Double-tap **left Shift** to start recording from the default microphone.
-- See live on-device transcription in a scrolling bottom-center overlay.
-- Complete sentences are tidied with recent transcript context through OpenAI's Responses API using `gpt-5.4-mini` with reasoning disabled; blue marks the passage currently being corrected, yellow marks queued speech, and green marks corrected text.
-- The overlay grows from one line to five wrapped lines, then scrolls older text upward. Its waveform follows your microphone level.
-- Double-tap **left Shift** again to finalize, save the recording and transcript, copy and paste the text into the original app, and clear the overlay.
-- Press **Escape** while recording to copy the currently visible text and clear the overlay, canceling pending cleanup and discarding the unsaved audio.
-- Bottom-center overlay shows recording, sound detection, transcription progress, success, and errors.
-- Full error text opens in a separate selectable error window.
-- Set your OpenAI API key from the menu bar icon; it is saved in Keychain and used for sentence cleanup and retranscribing saved audio.
-
-## Install with Homebrew
-
-Tap this repository, then install Chatty:
+## Install
 
 ```sh
 brew tap codethread/chatty https://github.com/codethread/Chatty.app
 brew install --cask codethread/chatty/chatty
+open -a Chatty
 ```
 
-The cask installs `/Applications/Chatty.app` and the `chatty` command. If you
-installed the old formula, first remove it with `brew uninstall --formula chatty`.
-Launch Chatty from Applications or with `open -a Chatty`.
+Homebrew installs `/Applications/Chatty.app` and the `chatty` command. The app is
+ad-hoc signed, not notarized. If macOS blocks its first launch, allow it in
+**System Settings → Privacy & Security → Open Anyway**.
 
-The release is ad-hoc signed, not notarized. If macOS blocks its first launch,
-allow it in **System Settings → Privacy & Security → Open Anyway**.
-The app prompts for Microphone and Accessibility access
-on first launch. Speech recognition uses Apple's on-device model, which downloads
-on first use if it is not already installed. Sentence cleanup uses the OpenAI
-API key saved in Chatty's Keychain entry.
-
-To update after the cask is updated:
+To update:
 
 ```sh
 brew update
 brew upgrade --cask codethread/chatty/chatty
 ```
 
-## Build
+## First launch
 
-```sh
-./scripts/build-app.sh
-```
+1. Grant **Microphone** and **Accessibility** access when prompted.
+2. Open the 🎙️ menu and choose **Set OpenAI API Key…**. The key is saved in Keychain.
+3. Focus the app where you want to insert text.
 
-The default builds a **debug harness with an incremental ID**, such as
-`/Applications/Chatty 6.app`, with a unique bundle and signing identifier.
-The counter is `~/Library/Application Support/Chatty/build-number`. Existing
-numbered bundles remain installed; running Chatty processes are stopped before
-the new build opens.
+Chatty stays in the menu bar rather than the Dock. Apple speech recognition is
+the default; macOS downloads its speech assets on first use if needed. Both
+recognition options run locally, but sentence cleanup requires the OpenAI API.
 
-| Command | Result |
+## Dictate
+
+| Action | Result |
 | --- | --- |
-| `./scripts/build-app.sh` | Numbered debug app with typed input and request diagnostics. |
-| `./scripts/build-app.sh --no-debug` | Numbered production app with real microphone input. |
-| `./scripts/build-app.sh --no-build-id` | Debug app named `Chatty.app`, with the stable bundle ID. |
-| `./scripts/build-app.sh --no-debug --no-build-id` | Production `/Applications/Chatty.app`, with the stable bundle ID. |
+| Double-tap **left Shift** | Start recording and see live words in the overlay. |
+| Double-tap **left Shift** again | Finish cleanup, save audio and transcript, copy and paste into the original app. |
+| Press **Escape** | Copy the visible text, cancel pending cleanup and discard the unsaved audio. |
 
-`--no-build-id` replaces `Chatty.app` and leaves the counter unchanged.
-Production builds reset Microphone and Accessibility permissions by default;
-grant access again when prompted. Debug builds skip the reset unless
-`--reset-permissions` is supplied. `--no-open` installs without launching.
+The overlay marks active cleanup in blue, queued speech in yellow and corrected
+text in green. Stop waits for outstanding cleanup before pasting. Errors prevent
+an incomplete paste; available audio is kept for recovery.
 
-```sh
-./scripts/build-app.sh --no-debug --no-build-id --no-open
-./scripts/build-app.sh --reset-permissions
-```
-
-Debug builds compile `CHATTY_DEBUG_PANEL` and open a floating control panel,
-available again through **Show Debug Panel…**, Command-0, or the Dock icon.
-The panel drives the same `DictationController` and overlay as production.
-Choose a **Speech recognition source**:
-
-- **Injected transcript · synthetic recording** (default) accepts stable text and
-  a separate provisional tail. **Inject snapshot** emits them through the real
-  input stream. Stop saves a playable synthetic AAC recording.
-- **Microphone · Nemotron 600M · 560 ms** uses a local quantized Core ML
-  model through FluidAudio. **Prepare local model** downloads about 626 MB once
-  and loads it into memory. Prepare before speaking; initial Core ML preparation
-  can take several seconds. Weights stay loaded between sessions. Models live in
-  `~/Library/Application Support/FluidAudio/Models/nemotron-streaming/560ms/`.
-  A pause of about one second closes the sentence with a full stop and keeps
-  listening. Existing question/exclamation marks are preserved; shorter pauses
-  stay within the same utterance. Stop also punctuates the final statement.
-- **Microphone · Apple SpeechAnalyzer** uses the production recognizer for comparison.
-- **Typed text** enables the text editor and **Load sample → Stream text**.
-- **Replay audio…** selects a local audio file and sends it through Nemotron in
-  clock-paced 80 ms packets. The overlay updates during playback, then finalizes
-  and copies the transcript automatically. File packets use the microphone's
-  resampling, level metering and AAC recording path. This does not play sound.
-  Stop flushes supplied audio; Cancel discards the recording.
-
-Microphone modes request microphone permission on first use and save recordings
-on Stop. Cancel copies visible text and discards unsaved audio. Both clear the
-overlay. The demo uses a private clipboard and a real AppKit test paste window by default.
-The explicit `system-paste --target-bundle com.apple.TextEdit` CLI command arms
-one production-path paste into an external test app. `restore-clipboard` restores
-and verifies all clipboard representations afterward.
-Debug builds skip startup microphone and Accessibility prompts. Global shortcuts
-start disabled; enable them explicitly with the debug CLI when testing them.
-
-Choose a **Correction backend** in the debug panel:
-
-- **Local HTTP fake · SCREAMING_SNAKE_CASE** (default) receives the actual
-  serialized OpenAI request on loopback and transforms its posted text. Saved
-  audio uploads use a configurable reference transcript. No API token is needed.
-- **Transcription only** displays recognition without network cleanup.
-- **OpenAI REST** runs the same direct `gpt-5.4-mini` request as production,
-  using your saved OpenAI API key. **Set API key…** replaces it in Keychain.
-- **Pi** uses the same mini model without reasoning for timing comparisons.
-
-The log shows local partial transcripts, decode time and final flush time. For
-network cleanup it shows credential loading, sending, elapsed time, HTTP status,
-actual service tier, request ID, input, output, errors, and cancellation. The activity timer keeps
-running while a request is pending. Credentials are never logged. A macOS
-Keychain trust prompt can delay credential loading; approve access for the debug
-app if prompted. Reads happen off the UI thread and the key is cached in memory
-for subsequent requests. Cancelling also interrupts the wait for credentials.
-
-The local-recognition experiment and measurements are documented in
-[Local speech research](docs/local-speech-research.md). The release demo also has
-a file benchmark that emits JSON lines without opening the UI or calling cleanup:
-
-```sh
-qlock exec --lock /tmp/agent-cpu.lock -w 60 -- swift build -c release -Xswiftc -DCHATTY_DEBUG_PANEL
-.build/release/Chatty --benchmark-asr --help
-.build/release/Chatty --benchmark-asr nemotron sample.wav --realtime
-.build/release/Chatty --benchmark-asr apple sample.wav --realtime
-.build/release/Chatty --benchmark-asr parakeet sample.wav
-```
-
-The Apple packet benchmark requires 16 kHz mono input. Parakeet is a batch
-accuracy reference; Nemotron is the local streaming backend in the demo.
-
-Corrections run one request at a time while new speech keeps streaming. After
-each reply, the next request combines recent corrected text with all newly
-completed speech. Edits invalidate cleanup of revised source text, and Stop also
-submits the last unfinished fragment before completing the session.
-
-The panel uses AppKit's floating-window accessibility subrole so tiling window
-managers such as AeroSpace can recognize it as a floating utility window.
-
-The panel and its menu item are excluded from builds without the flag, including
-ordinary Swift debug builds. To run it directly during development:
-
-```sh
-./scripts/run-debug.sh
-```
-
-The launcher reuses this checkout's `build/Chatty Debug.app` without installing a
-production app or incrementing its build number. Config and recordings live in
-`build/debug-data/`; the authenticated control connection is recorded in
-`build/debug-control.json`. Installed debug builds use the separate
-`~/Library/Application Support/Chatty Debug/` directory. It inherits `OPENAI_API_KEY` when already set
-in your shell; otherwise the app uses Keychain. The key is kept in memory and
-is never passed in command arguments or written to debug logs.
-
-The panel exposes HTTP failures, held replies, input failures, request payloads,
-saved-recording retry/cancel/copy, and the settings window. The CLI drives the
-same running controllers. XCUITest drives the actual AppKit controls:
-
-```sh
-./scripts/chatty-debug --help
-./scripts/chatty-debug start
-./scripts/chatty-debug wait --phase listening
-./scripts/chatty-debug inject --committed 'A complete sentence.' --partial 'live words'
-./scripts/chatty-debug stop
-./scripts/chatty-debug wait --phase complete
-./scripts/test-ui.sh
-./scripts/check.sh
-```
-
-The control CLI is Swift; no separate scripting runtime is required. `check.sh`
-runs locked Swift checks, a signed production archive build, and native XCUITest
-workflows in a separate signed debug app with fresh storage per test. Full Xcode
-and an unlocked desktop are required. Approve Xcode's first-run UI Automation
-prompt; the suite never changes TCC permissions. It includes cached-model audio
-replay; `--skip-audio` explicitly excludes that contract. Xcode's `.xcresult`
-contains test outcomes, state attachments and failure screenshots. The suite
-quits its own app and leaves user builds alone.
-See [debug verification](docs/debug-verification.md) for evidence, commands and
-external testing boundaries.
-
-Production first launch front-loads setup:
-
-- Microphone access
-- Accessibility access, needed for the global double-left-shift shortcut
-
-If the shortcut does not work, enable Chatty under **System Settings → Privacy & Security → Accessibility** and relaunch.
+Use **Set Recording Shortcut…** in the menu to choose another key combination.
 
 ## Speech recognition
 
-Open **Speech Recognition…** from the menu bar. **Apple · built in** is the
-production default. To use **Nemotron 600M · local streaming**, click
-**Download Model** (approximately 626 MB), wait for readiness, select Nemotron
-and Save. The current fixed model recognizes English in 560 ms chunks. Its
-speech recognition runs on this Mac; sentence cleanup still uses OpenAI.
-The window shows download/load progress and a retry action on failure.
+Open **Speech Recognition…** to switch between:
 
-The choice is stored as `speechRecognition` (`apple` or `nemotron`) in
-`~/Library/Application Support/Chatty/config.json`. Save applies it to the next
-dictation; an ongoing recording retains its original engine. Cancel leaves the
-saved choice unchanged. Existing installations default to Apple. You can switch
-back to Apple in the same window. Models stay in the FluidAudio cache and remain
-warm within the running app after first use.
+- **Apple · built in** — the default on-device recognizer.
+- **Nemotron 600M · local streaming** — an optional English model. Click
+  **Download Model** (approximately 626 MB), wait for readiness, select Nemotron
+  and **Save**. Pause for about a second to end a statement while keeping the
+  recording open.
+
+Changes apply to the next recording. The current recording keeps its original
+recognizer. You can switch back to Apple in the same window.
 
 ## Sentence cleanup
 
-Normal builds call `POST https://api.openai.com/v1/responses` directly using
-`gpt-5.4-mini`, `reasoning.effort: none`, low verbosity, `store: false`, and
-Fast processing (`service_tier: priority`, which has premium per-token pricing).
-Each passage gets the configured instructions and dictionary. A shared
-URLSession reuses connections; Keychain is read off the UI thread once and the
-credential is cached in memory. Saving a new API key updates the cache.
-Pi is only a comparison option in the debug panel.
-
-Open **Sentence Cleanup…** to edit the cleanup instructions, **Context lines**,
-and word dictionary. Context defaults to the last **three wrapped transcript
-lines**, using the overlay's font and width and expanding back to a complete
-sentence. All new completed speech is included, even if it exceeds that window.
-Older corrected text stays fixed. Replies can revise the recent passage using
-spoken retries and spelled-out clarifications; no correction metadata is learned
-or saved automatically.
-
-Enter one dictionary mapping per line, for example:
+Open **Sentence Cleanup…** to change the instructions, recent context size and
+word dictionary sent to OpenAI. Context defaults to three wrapped transcript
+lines; newly completed speech is always included. Preferred spellings use one
+mapping per line:
 
 ```text
 jason = JSON
 open ai = OpenAI
 ```
 
-Mappings are passed to the model with each passage, matching recognized words
-or phrases case-insensitively while retaining the preferred capitalization.
-Settings persist in `~/Library/Application Support/Chatty/config.json`; saved
-changes apply to subsequent correction requests. Reset to Defaults changes the
-editor's fields; Save applies them.
+**Save** applies changes to subsequent cleanup requests. **Reset to Defaults**
+changes the editor's fields; save to apply them. Chatty does not learn dictionary
+entries automatically.
 
-Only completed, stable recognized sentences are submitted during dictation.
-Stopping flushes the remaining text and waits for corrections before saving and
-pasting. A failed cleanup is shown as an error and prevents an incomplete paste;
-the original audio remains saved for recovery.
-Cancel cancels the active HTTP request and rejects late output; aborting an old
-correction does not cancel a replacement batch or a new recording.
+## Recordings and privacy
 
-## Comparing recording quality
+The **Recordings** menu lets you open saved audio, copy transcripts and recover
+failed transcriptions with **Transcribe Now** or **Try Again**. **Set Transcription
+Vocabulary…** supplies names or terms for those saved-audio requests.
 
-Use the [repeatable read-aloud check](docs/dictation-test.md) to compare transcription accuracy, recording size, and turnaround time after audio-setting changes.
+Live speech recognition runs on your Mac. Completed transcript passages, cleanup
+instructions and the dictionary are sent to OpenAI for cleanup. Choosing to
+transcribe a saved recording uploads its audio to OpenAI.
 
-## Recording diagnostics
+Config, saved audio and transcripts live in
+`~/Library/Application Support/Chatty/`. Recordings older than five days are
+removed when Chatty starts.
 
-Recording setup, microphone authorization, encoder errors, and start/stop results are logged to macOS's unified log. These logs include the audio input name and recording path, but not audio, transcripts, or API keys.
+## Troubleshooting
 
-After reproducing a failure, inspect recent entries:
+If the recording shortcut fails, enable Chatty in **System Settings → Privacy &
+Security → Accessibility**, then relaunch. Use **Show Last Error…** for full error
+text. [Recording diagnostics](docs/development.md#recording-diagnostics) explains
+how to collect audio setup logs.
 
-```sh
-/usr/bin/log show --last 10m --style compact --predicate 'subsystem == "local.chatty.Chatty" AND category == "Recording"'
-```
+## Further reading
 
-## Notes
-
-See the [C4 architecture](docs/architecture.md) for system boundaries, components,
-and the dictation lifecycle.
-
-This requires macOS 26 or later on Apple Silicon. Building from source also
-requires Swift 6.2 or later. Live dictation uses `SpeechAnalyzer` and
-`SpeechTranscriber`; unsupported locales or unavailable models produce a visible error. No Apple Developer account is
-required for local unsigned builds. Distribution outside your machine may need
-signing/notarization.
-
-The proposed next step for real microphone I/O automation is documented in
-[macOS I/O testing research](docs/macos-io-testing.md): virtual Core Audio input
-plus XCUITest on a dedicated test Mac. This research is separate from completed
-file-replay and native-paste verification.
+- [Repeatable recording-quality check](docs/dictation-test.md)
+- [Building from source and development tools](docs/development.md)
+- [Verification checklist](docs/verification.md)
+- [Architecture](docs/architecture.md)

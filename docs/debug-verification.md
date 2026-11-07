@@ -59,33 +59,13 @@ Test workspaces remain available for inspecting config, metadata and AAC files;
 their absolute paths are recorded in the attached final state.
 They contain only the synthetic fixtures unless explicitly changed by a developer.
 
-## Contracts
+## Coverage
 
-See [the UI tests](../Tests/ChattyUITests/DictationUITests.swift) for exact assertions.
-
-On 2026-11-07, `./scripts/check.sh --no-build` passed the complete gate:
-10 native UI workflows, zero failures and zero skips, including both recognizers,
-cross-app keys and exact external paste with clipboard restoration. Swift checks
-and signed production archive validation also passed. The local result is
-`build/ChattyUI-20261107-202359.xcresult`; the authorized UI artifacts had already
-been built before that run. A preceding full UI run also passed all ten workflows.
-
-| Workflow | Observed contract |
-| --- | --- |
-| Stream, queue, Stop | Real Start/Inject/Stop buttons, visible stable/provisional text, active/queued text-storage highlights, serialized HTTP, tail flush, exactly one completion/copy, paste destination, playable AAC and transcript after relaunch. |
-| Cancel and restart | Cancel copies visible text, discards unsaved audio, and a released late reply cannot change the next session. Held preparation can also be cancelled and restarted. |
-| Capture failures | Preparation, stream, Stop and Cancel faults show an error and preserve available audio without completing a transcript. |
-| HTTP failures | Actual URLSession requests/responses for 401, 429, 500, malformed, empty, refused, incomplete and disconnected responses; visible error controls, saved playable audio and no partial paste. |
-| Saved recording | Upload/retry/cancel/copy through real controls; exact multipart audio byte count/SHA256, persisted error clearing and no late reply replacing live dictation. |
-| Cleanup settings | Actual validation, Cancel, Save, relaunch persistence, Reset-then-Cancel, Reset-then-Save, and prompt/dictionary in the posted payload. |
-| Speech settings | Apple default, missing-model validation, Download availability and Cancel preserving selection after relaunch. |
-| Recognition switch | Cached model load and Nemotron Save through settings, persisted selection, clock-paced WAV through production conversion/recognition/cleanup/AAC/history/paste; switching to Apple during recording applies only to the next session. Silence closes a statement before capture ends. |
-| External paste | Separate native editor app receives the exact text through production app activation and CGEvent Command-V; inspect text before restoring and comparing all clipboard representations. |
-| Cross-app keys | Native shortcut capture, actual keyboard chord with another app focused, visible live text, then Escape from that app cancels and copies without saving. Direct Carbon dispatch is not substituted for keyboard delivery. |
-
-Focused Swift tests retain coverage of pure parsing/context/UTF-16 logic,
-asynchronous credential loading, storage failure policy and audio conversion.
-They supplement these workflows. They do not claim hardware or desktop coverage.
+The [verification checklist](verification.md) is the coverage map for user
+interactions, automated I/O, unit logic, manual checks and remaining gaps.
+Use it when deciding what a change needs to verify. Exact assertions live in
+[DictationUITests](../Tests/ChattyUITests/DictationUITests.swift) and
+[ChattyTests](../Tests/ChattyTests).
 
 ## Interactive debug tools
 
@@ -125,19 +105,8 @@ ID` path stages the general clipboard; wait for `--paste-dispatches N`, inspect
 the actual destination, then `restore-clipboard`. Dispatch alone does not prove
 paste delivery. Clipboard contents stay in memory and are never returned by the API.
 
-## Remaining external boundaries
+## Further coverage
 
-File replay crosses conversion and recognition but bypasses Core Audio's actual
-microphone input tap. Physical microphone acquisition, device/route changes,
-first-run microphone allow/deny, room acoustics and Keychain trust still need a
-separate lane. Live OpenAI authentication/output/latency and comparative ASR
-accuracy are not established by local HTTP and synthetic audio fixtures.
-The desktop keyboard test uses Control–Option–Command–9; default double-left-Shift
-timing remains covered by focused NSEvent logic checks.
-
-The user previously confirmed a physical Control–Option–Command–9 shortcut with
-another app focused. That is independent evidence from the repeatable native
-keyboard contract. See [macOS I/O research](macos-io-testing.md) for the proposed
-virtual Core Audio input lane. No audio driver or virtual device is installed by
-these checks. A real cold download/interruption/resume was verified during the
-model integration; the ordinary UI suite deliberately reuses that cached model.
+Manual checks and unverified boundaries are tracked in the
+[verification checklist](verification.md). The proposed real-input-device lane is
+in [macOS I/O testing research](macos-io-testing.md).

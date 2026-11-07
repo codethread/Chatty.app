@@ -22,7 +22,7 @@ This installs and opens `/Applications/Chatty <N>.app`. Open requested test buil
 
 Use `./scripts/run-debug.sh` for agent testing with the typed-input debug panel. Provide a debug-panel build to the user only when explicitly requested. The build script's bare default enables that panel, so always pass `--no-debug` for user test builds.
 
-Add `--no-build-id` only when the user requests plain `/Applications/Chatty.app`. Production builds reset Microphone/Accessibility permissions by default. See [README build options](README.md#build) for other combinations.
+Add `--no-build-id` only when the user requests plain `/Applications/Chatty.app`. Production builds reset Microphone/Accessibility permissions by default. See [build options](docs/development.md#build-and-install) for other combinations.
 
 After any code edit, run at least:
 
@@ -33,6 +33,10 @@ swift build
 ## Architecture
 
 Read the [C4 architecture](docs/architecture.md) before changing component responsibilities, service interfaces, dependencies, or dictation data flow. Update it in the same change when those boundaries or runtime contracts change. Keep it lean: C1–C3 diagrams, key source links, and current contracts; replace stale details rather than accumulating history or duplicating code inventories here.
+
+## Verification — critical
+
+Read [the verification checklist](docs/verification.md) before changing user interactions, I/O boundaries, integrations or tests. **Update it in the same change** with affected coverage and remaining gaps. Each checked item must identify an executed automated test or recorded manual check; distinguish unit logic, real integration I/O and human verification. Keep new or changed checks unchecked until executed; record skipped coverage as a gap. Use the [testing runbook](docs/debug-verification.md) for execution procedures.
 
 ## Permissions
 
