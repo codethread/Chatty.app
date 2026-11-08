@@ -226,3 +226,14 @@ files unchanged and preserved the installed binary, production preferences/cache
 Keychain/TCC and shared model weights. Before explicit cleanup, normal startup
 retention had removed one expired recording and updated its index; the other
 43 production files were unchanged across the upgrade.
+
+0.5.0 landing cleanup: **2026-11-08**, removed Chatty 14, the current checkout's
+`build/` output (including native runner products, archives and raw evidence),
+13 synthetic UI-test workspaces and six test-only preference/cache/HTTP-storage
+entries. `swift package clean` removed compiled products in both Chatty checkouts;
+the other checkout had no `build/` output. Both source worktrees and reusable
+dependency caches remain. All 44 production data files, protected production
+preferences/caches/HTTP storage and the installed executable remained unchanged
+through explicit cleanup. All 44 shared model files retained their sizes and
+modification times. Keychain and TCC were left untouched; Homebrew cleanup ran,
+and the installed production app remained available and running.
