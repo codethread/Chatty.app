@@ -27,7 +27,8 @@ Examples:
   scripts/test-ui.sh --all --list
 
 Missing permissions/models fail selected tests. Unselected groups are not passes.
-See docs/permissions.md for prerequisites and docs/debug-verification.md for scope.
+Scope: docs/testing.md. Access: docs/permissions.md.
+Native setup and artifact reuse: docs/debug-verification.md.
 EOF
 }
 

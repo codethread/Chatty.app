@@ -1,9 +1,9 @@
 # Permissions and test prerequisites
 
-Choose verification from the changed behavior before requesting access. Most
-logic and component-I/O tests need no desktop session or privacy grants. Use the
-[testing runbook](debug-verification.md) to select a slice and the
-[verification map](verification.md) to record what actually ran.
+Read this when the [agent testing guide](testing.md) selects a desktop, capture or
+live-service check, or when resolving its blocked access. This reference owns the
+permission requirements and grant-recovery procedure; the guide owns test scope,
+execution order and reporting.
 
 ## Using Chatty
 
@@ -49,26 +49,6 @@ separate release prerequisites, not app privacy permissions. A certificate's
 private-key approval, if stable signing is configured, is also separate from
 access to the OpenAI Keychain item.
 
-## Agent procedure
-
-1. Identify the changed boundary and preview selection with `--list`. For a
-   correction/parser/settings change, run the relevant Swift suites and, when
-   control wiring changes, the relevant core UI workflow. A change to cleanup
-   does not require rerunning global-shortcut or external-paste tests.
-2. Run the selected lower-level checks first. Add paste only for paste/focus/
-   clipboard changes, shortcuts for shortcut handling, recognizers for inference
-   or recognition data flow, and archive checks for packaging/release work.
-3. If a selected check is blocked, record the test, actual error, exact app path
-   and unverified boundary. Finish independent selected checks. Unrelated
-   unselected desktop lanes do not block the changed slice and are not passes.
-4. Request only the missing authorization. A password/Touch ID prompt needs the
-   user; never ask them to reveal the OpenAI key. Preserve the signed artifacts
-   while they approve access, then retry the blocked slice with `--no-build`.
-5. Broaden to `--all` for a release/full regression gate or a change spanning the
-   relevant boundaries. Explicitly report incomplete release checks rather than
-   silently skipping them. Respect a user's instruction to hold a release when
-   required verification is blocked.
-
 ## Identifying and refreshing the right grant
 
 The maintained test target is `build/Chatty UITest.app`, bundle ID
@@ -83,7 +63,8 @@ bundle. Then reuse those artifacts. A successful permission probe alone does
 not prove paste delivery: the external-editor assertion must pass too.
 
 `--no-build` does not test app source changes: rebuild first when those change,
-then authorize the new artifact. For UI-test-only changes, the runbook explains
+then authorize the new artifact. For UI-test-only changes, the
+[harness reference](debug-verification.md#native-execution-and-authorized-artifacts) explains
 how to rebuild the runner without replacing the authorized app. Ordinary test
 scripts do not reset or edit TCC. `tccutil reset` revokes decisions; it cannot
 grant consent. The numbered production installer currently resets permissions

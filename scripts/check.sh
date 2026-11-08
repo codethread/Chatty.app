@@ -26,7 +26,7 @@ Examples:
   scripts/check.sh --with-paste --with-global-shortcuts --no-build
   scripts/check.sh --all --list
 
-Choose tests from the changed behavior; see docs/debug-verification.md.
+Choose tests from the changed behavior; follow docs/testing.md.
 Run scripts/test-ui.sh directly for UI-only work. Selected failures fail the run;
 excluded boundaries are not claimed as verified. Permissions: docs/permissions.md.
 EOF

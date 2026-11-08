@@ -1,7 +1,8 @@
-# Verification and the testing pyramid
+# Verification coverage and evidence
 
-Checked items have executed evidence; unchecked items are verification gaps.
-Update affected items when behavior or tests change, naming the actual I/O boundary.
+Start with [the agent testing guide](testing.md) to scope a change and select
+commands. Consult this map for the affected behaviors and update their evidence
+after execution. Checked items have executed evidence; unchecked items are gaps.
 
 - **Auto UI:** XCUITest operates real AppKit controls in the signed debug app.
 - **Auto IO:** Real HTTP, files or AVFoundation processing without desktop UI.
@@ -11,20 +12,7 @@ Update affected items when behavior or tests change, naming the actual I/O bound
 The native suite is [DictationUITests](../Tests/ChattyUITests/DictationUITests.swift).
 [ChattyTests](../Tests/ChattyTests) contains both logic and real component I/O;
 its framework/folder name alone does not identify the boundary tested.
-See the [testing runbook](debug-verification.md) for execution procedures.
-
-## Choose the lowest layer that proves the behavior
-
-Keep a small maintained workflow test across each real mechanism, then exercise
-its variants at the lowest layer that can detect the relevant regression. A
-past successful run is evidence, not a reason to retire that workflow test.
-When moving cases down, preserve their outcomes (saved audio, errors, copy/paste,
-session ownership), run the replacement tests, and keep the native check for
-control wiring and presentation. `./scripts/check.sh` runs headless checks;
-add only affected UI/I/O slices, or `--all` for an explicit full gate across
-both layers and the release archive. Preview with `--list`. Unchanged paste or
-shortcut handling does not require those desktop tests for a cleanup change.
-See [permissions](permissions.md) before selecting a boundary that needs access.
+## Retained workflows and lower-level coverage
 
 | Mechanism retained at the higher layer | Variants owned by faster tests |
 | --- | --- |
@@ -35,18 +23,10 @@ See [permissions](permissions.md) before selecting a boundary that needs access.
 | Settings validation, Save/Cancel/Reset and relaunch | Invalid dictionary/context variants and instruction encoding: `CorrectionSettingsTests`; file persistence/retention/corruption: `PersistenceTests`. |
 | Cross-app shortcut/Escape and production paste with clipboard restoration | Timing/modifier/key variants: `ShortcutTests`. Keep desktop tests because constructed events cannot prove global delivery or focus. |
 
-Pure parsing/state tests come first; real component I/O comes next; native
-workflows prove app/platform wiring. Hardware and live-service checks cover
-boundaries these layers substitute. Do not multiply UI scenarios for every
-response, text, format or timing variant. Add a higher-layer case when it crosses
-a different boundary or reveals a wiring failure lower tests cannot observe.
-
 **Automated microphone evidence is still incomplete:** file replay bypasses the
 real input tap, and direct buffers do not prove device acquisition or shutdown.
 The recorded human comparison below exercises microphone recognition and live
 cleanup; device shutdown/recovery and the virtual-input lane remain gaps.
-Retain a representative capture-to-output workflow when automating that lane,
-and keep format/text variants in the existing faster suites.
 
 ## Install, launch and grant access
 
@@ -134,6 +114,14 @@ and keep format/text variants in the existing faster suites.
 
 ## Evidence and maintenance
 
+Agent-guide audit: **2026-11-08**, all repository Markdown local links/anchors,
+the guide's 14 named Swift suites and five exact native method references were
+checked against files/source. Both CLI help routes and the three scoped preview
+examples passed, as did selector checks, shell syntax and `swift build`.
+Records: `build/testing-docs-audit.log`, `build/testing-docs-build.log`.
+This documentation/help-only change did not rerun application, native or archive
+tests; their execution and assertions are unchanged.
+
 Scoped-runner verification: **2026-11-08**, default `./scripts/check.sh` passed
 shell syntax, selector checks, `swift build`, and all 66 Swift tests in 14 suites.
 `--filter 'TranscriptCorrectionsTests|DictationControllerTests'` ran exactly 22
@@ -144,17 +132,19 @@ archive lanes were deliberately excluded for this runner/docs change, not counte
 as passes. Maintained selector checks exercise defaults, each group, unions,
 exact methods, catalogue completeness and invalid flags without desktop access.
 
-Current correction-fix gate: **2026-11-07**, `./scripts/check.sh`; 66 Swift test
+Historical correction-fix gate: **2026-11-07**, `./scripts/check.sh` (before
+scoped defaults); 66 Swift test
 functions passed in 14 suites, archive validation passed, and 9 of 10 native
 workflows passed. External paste is blocked by Accessibility permission; its
 focused retry failed for the same permission check. No tests were skipped and
-the failed gate is not treated as success. **Release is held** pending that
-authorization. The direct live REST check subsequently passed on 2026-11-08.
+the failed gate is not treated as success. **Release is held** pending a successful
+paste retry after the grant refresh. The direct live REST check passed on 2026-11-08.
 Results: `build/ChattyUI-20261107-215617.xcresult`,
 `build/ChattyUI-correction-paste-recheck.xcresult`,
 `build/ChattyUI-authorized-paste-20261108.xcresult` (focused retry).
 
-Previous successful full gate: **2026-11-07**, `./scripts/check.sh --no-build`; 60 Swift test
+Previous successful full gate: **2026-11-07**, `./scripts/check.sh --no-build`
+(before scoped defaults); 60 Swift test
 functions in 14 suites, 10 native UI workflows, zero failures/skips, and signed
 archive validation. The UI runner was rebuilt with `xcodebuild build-for-testing`
 first; app sources were unchanged, so `--no-build` preserved the authorized
@@ -166,4 +156,4 @@ with real files/loopback HTTP where applicable.
 
 Keep checked items tied to named tests or dated records. When a flow changes,
 update its coverage, actual I/O boundaries and remaining gaps. Execution procedures
-belong in the [testing runbook](debug-verification.md).
+belong in the [agent testing guide](testing.md).

@@ -2,9 +2,9 @@
 
 Build requirements: macOS 26 or later on Apple Silicon and Swift 6.2 or later.
 The native UI tests additionally require full Xcode and an unlocked desktop.
-See [architecture](architecture.md) for component boundaries, the
-[verification checklist](verification.md) for coverage, and
-[debug verification](debug-verification.md) for test setup and evidence.
+For any code or test change, follow [the agent testing guide](testing.md).
+See [architecture](architecture.md) for component boundaries and
+[the harness reference](debug-verification.md) for native/debug operations.
 
 ## Build and install
 
@@ -30,9 +30,8 @@ and opening the requested build.
 `--no-build-id` replaces `Chatty.app` without advancing the counter.
 `--no-open` installs without launching. Production installs reset Microphone and
 Accessibility permissions; grant them again when prompted. Debug installs skip
-that reset unless `--reset-permissions` is supplied. Run full builds/checks through
-`qlock` on `/tmp/agent-cpu.lock`; focused checks do not need the lock. The test
-launchers already acquire it for their expensive commands.
+that reset unless `--reset-permissions` is supplied. Permission details and
+grant recovery live in [permissions](permissions.md).
 
 ## Debug panel
 
@@ -80,7 +79,7 @@ status, input/output, errors and cancellation.
 Debug uses a private clipboard and AppKit paste destination by default. External
 paste, clipboard restoration, held replies, faults, saved-audio recovery and the
 native Swift control CLI are covered in the
-[interactive tools and verification runbook](debug-verification.md#interactive-debug-tools).
+[interactive debug tools reference](debug-verification.md#interactive-debug-tools).
 
 ## Recognition benchmarks
 

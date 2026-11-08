@@ -110,6 +110,7 @@ how to collect audio setup logs.
 
 - [Repeatable recording-quality check](docs/dictation-test.md)
 - [Building from source and development tools](docs/development.md)
-- [Verification checklist](docs/verification.md)
+- [Testing guide for agents: scope, selectors and required checks](docs/testing.md)
+- [Verification coverage and evidence](docs/verification.md)
 - [Permissions and test prerequisites](docs/permissions.md)
 - [Architecture](docs/architecture.md)

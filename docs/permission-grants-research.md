@@ -2,8 +2,9 @@
 
 Research date: 2026-11-08. These are documented options and recommendations;
 no certificate or permission was provisioned for this research. See
-[permissions](permissions.md) for the operational reference and
-[debug verification](debug-verification.md) for test execution.
+[permissions](permissions.md) for access and grant recovery,
+[the agent testing guide](testing.md) for scope and execution, and
+[the harness reference](debug-verification.md) for artifact reuse.
 
 The practical approach is to keep most tests below permission boundaries, then
 give the small desktop integration suite a stable signed identity. Signing can
@@ -106,11 +107,8 @@ before moving a test host beyond macOS 26. [Apple PPPC schema](https://github.co
 
 ## Minimal next steps for Chatty
 
-1. Keep controller, HTTP, transcript and supplied-audio variants in focused tests.
-   Run desktop paste, global shortcuts, real input capture and live Keychain
-   checks only when the changed slice crosses those boundaries. Preserve a
-   representative integration check for each mechanism; selecting fewer tests
-   is not evidence that an unexecuted boundary passed.
+1. Apply the [testing guide](testing.md) to separate focused variants from the
+   desktop/capture/Keychain boundaries selected for the change.
 2. Provision one legitimate development identity, preferably through Xcode, and
    exercise the existing `CHATTY_DEBUG_SIGN_IDENTITY` hook. Do not change the
    numbered user-build installation/reset policy as a side effect of test setup.

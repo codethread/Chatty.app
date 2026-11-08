@@ -103,5 +103,6 @@ flowchart TD
   Keychain work run outside it; capture buffers are copied before crossing queues.
 
 Detailed behavior belongs to the linked source and [native UI contracts](../Tests/ChattyUITests/DictationUITests.swift).
-Build/test procedures and coverage limits live in [debug verification](debug-verification.md);
+Test selection/procedure lives in [the agent testing guide](testing.md), with
+coverage limits in [verification](verification.md);
 recognizer tradeoffs live in [speech research](local-speech-research.md).

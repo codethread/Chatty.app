@@ -2,7 +2,8 @@
 
 Research checked on 2026-11-07. The native XCUITest baseline is now implemented
 in [ChattyUITests](../Tests/ChattyUITests/DictationUITests.swift); see
-[debug verification](debug-verification.md) for execution and contracts. The
+[the agent testing guide](testing.md) for selection and
+[the harness reference](debug-verification.md) for native execution. The
 virtual microphone, device routing and permission lanes below remain proposals.
 
 The practical next step is **a virtual Core Audio microphone plus macOS

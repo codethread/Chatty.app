@@ -4,6 +4,10 @@
 
 Chatty is a Swift/AppKit macOS menu-bar-only dictation app. It targets recent Apple Silicon macOS and is built with Swift Package Manager.
 
+## Verification — critical
+
+**Before changing code, tests, verification scripts or testing guidance, read and follow [the agent testing guide](docs/testing.md).** State the affected behavior and verification plan before implementation; use its behavior-to-suite routing, selection flags and completion criteria. Update the plan when scope expands and record affected coverage in [verification](docs/verification.md).
+
 ## User profile and design scope
 
 - Single-user desktop tool used in a quiet office with little background noise; simple volume-based silence detection is an acceptable starting assumption.
@@ -20,29 +24,17 @@ A **test build for the user** is the real menu-bar app with microphone input and
 
 This installs and opens `/Applications/Chatty <N>.app`. Open requested test builds by default; use `--no-open` only when the user asks to leave the build unopened.
 
-Use `./scripts/run-debug.sh` for agent testing with the typed-input debug panel. Provide a debug-panel build to the user only when explicitly requested. The build script's bare default enables that panel, so always pass `--no-debug` for user test builds.
+When interactive typed-input debugging is needed, use `./scripts/run-debug.sh`. Provide a debug-panel build to the user only when explicitly requested. The build script's bare default enables that panel, so always pass `--no-debug` for user test builds.
 
 Add `--no-build-id` only when the user requests plain `/Applications/Chatty.app`. Production builds reset Microphone/Accessibility permissions by default. See [build options](docs/development.md#build-and-install) for other combinations.
-
-After any code edit, run at least:
-
-```nu
-swift build
-```
 
 ## Architecture
 
 Read the [C4 architecture](docs/architecture.md) before changing component responsibilities, service interfaces, dependencies, or dictation data flow. Update it in the same change when those boundaries or runtime contracts change. Keep it lean: C1–C3 diagrams, key source links, and current contracts; replace stale details rather than accumulating history or duplicating code inventories here.
 
-## Verification — critical
-
-Read [the verification checklist](docs/verification.md) before changing user interactions, I/O boundaries, integrations or tests. **Update it in the same change** with affected coverage and remaining gaps. Each checked item must identify an executed automated test or recorded manual check; distinguish unit logic, real integration I/O and human verification. Keep new or changed checks unchecked until executed; record skipped coverage as a gap. Use the [testing runbook](docs/debug-verification.md) for execution procedures.
-
-Select tests from the changed behavior: start with focused Swift suites, then add only the affected UI/I/O slices. Unchanged paste or global-shortcut handling does not require those desktop tests. Preview with `./scripts/check.sh --list`; use `--all` for an explicitly required full regression/release gate. Report selected, excluded and blocked coverage separately.
-
 ## Permissions
 
-Before desktop, microphone or live-service verification, read [permissions and test prerequisites](docs/permissions.md). It maps each test slice to the access it needs and explains blocked checks, app identities and reauthorization. Finish independent selected checks when a permission blocks one slice; ordinary test runs must preserve TCC decisions and authorized artifacts.
+Before selected desktop, microphone or live-service checks, read [permissions and test prerequisites](docs/permissions.md) for the exact app's access and grant-recovery procedure.
 
 ## Notes
 
