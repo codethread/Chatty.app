@@ -321,7 +321,7 @@ final class DictationUITests: XCTestCase {
     func testAudioEngineSwitchAppliesToNextSession() async throws {
         let model = try await client.state().model
         guard ["downloaded", "ready"].contains(model.phase) else {
-            throw HarnessError("Download the fixed model using debug Speech Recognition settings before running the audio contract. Use --skip-audio only to explicitly exclude it.")
+            throw HarnessError("Download the fixed model using debug Speech Recognition settings before running the audio workflow (--with-audio).")
         }
         panel.buttons["Speech recognition…"].click()
         let speech = app.windows["Speech Recognition"]

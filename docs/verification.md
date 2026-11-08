@@ -12,6 +12,7 @@ after execution. Checked items have executed evidence; unchecked items are gaps.
 The native suite is [DictationUITests](../Tests/ChattyUITests/DictationUITests.swift).
 [ChattyTests](../Tests/ChattyTests) contains both logic and real component I/O;
 its framework/folder name alone does not identify the boundary tested.
+
 ## Retained workflows and lower-level coverage
 
 | Mechanism retained at the higher layer | Variants owned by faster tests |
@@ -58,7 +59,7 @@ cleanup; device shutdown/recovery and the virtual-input lane remain gaps.
 ## Stop and insert the finished text
 
 - [x] **Auto UI:** Tail flush, cleanup completion, one copy/completion, playable AAC/transcript and history reload. `testStreamingQueueStopAndPersistence`.
-- [ ] **Auto UI / desktop IO:** Production activation/CGEvent Command-V, exact separate-editor text and restoration of every clipboard representation. `testExternalApplicationPasteAndClipboardRestoration` failed its Accessibility check on 2026-11-07 and a focused retry on 2026-11-08. The exact app's grant was subsequently refreshed; it has not been retested since that refresh. Earlier successful evidence is in the previous full gate below.
+- [ ] **Auto UI / desktop IO:** Production activation/CGEvent Command-V, exact separate-editor text and restoration of every clipboard representation. `testExternalApplicationPasteAndClipboardRestoration` still failed its Accessibility check on 2026-11-08 after the exact app's grant was refreshed. This is separate from correction-content handling through the fake service. Earlier successful evidence is in the previous full gate below.
 - [x] **Unit + component IO:** Multi-sentence replacement/deletion, preserved older text, continued dictation after clearing, and Stop with no remaining text. [TranscriptCorrectionsTests](../Tests/ChattyTests/TranscriptCorrectionsTests.swift), [DictationControllerTests](../Tests/ChattyTests/DictationControllerTests.swift). The controller tests use loopback HTTP and playable AAC; capture/presentation are substituted.
 - [x] **Unit:** Context/pending speech/final-fragment handling preserves older corrected text. [TranscriptCorrectionsTests](../Tests/ChattyTests/TranscriptCorrectionsTests.swift), [TranscriptLayoutTests](../Tests/ChattyTests/TranscriptLayoutTests.swift).
 - [x] **Recorded desktop check:** File replay through each engine pasted expected text into TextEdit and restored the clipboard, 2026-11-07. Local record: `build/native-verification.json`.
@@ -114,6 +115,18 @@ cleanup; device shutdown/recovery and the virtual-input lane remain gaps.
 
 ## Evidence and maintenance
 
+Correction-return contract: **2026-11-08**, all 66 Swift tests in 14 suites passed.
+The production cleanup client used loopback HTTP with a fake returning an
+intentional `{"text":""}` edit. Both Stop-empty and continue-with-fresh-speech
+cases passed, including cleared presentation state, no restored deleted text,
+retained playable audio/history and no empty copy/completion. Multi-sentence
+replacement and preservation of older text outside the edit window also passed.
+Missing/malformed output remains an error; the fake's `.empty` behavior models a
+missing response, not an intentional deletion. Capture and native presentation
+are substituted in these component tests. No live OpenAI call or manual check
+is required for this return-content contract.
+Record: `build/correction-return-verification.json`.
+
 Agent-guide audit: **2026-11-08**, all repository Markdown local links/anchors,
 the guide's 14 named Swift suites and five exact native method references were
 checked against files/source. Both CLI help routes and the three scoped preview
@@ -132,16 +145,17 @@ archive lanes were deliberately excluded for this runner/docs change, not counte
 as passes. Maintained selector checks exercise defaults, each group, unions,
 exact methods, catalogue completeness and invalid flags without desktop access.
 
-Historical correction-fix gate: **2026-11-07**, `./scripts/check.sh` (before
-scoped defaults); 66 Swift test
-functions passed in 14 suites, archive validation passed, and 9 of 10 native
-workflows passed. External paste is blocked by Accessibility permission; its
-focused retry failed for the same permission check. No tests were skipped and
-the failed gate is not treated as success. **Release is held** pending a successful
-paste retry after the grant refresh. The direct live REST check passed on 2026-11-08.
-Results: `build/ChattyUI-20261107-215617.xcresult`,
-`build/ChattyUI-correction-paste-recheck.xcresult`,
-`build/ChattyUI-authorized-paste-20261108.xcresult` (focused retry).
+Full recheck: **2026-11-08**, `./scripts/check.sh --all --no-build`; shell/selector
+checks, `swift build`, all 66 Swift tests in 14 suites, and signed production
+archive validation passed. The unchanged signed test app was reused and the
+runner rebuilt. Nine of ten native workflows passed, with zero skips. External
+paste still failed its Accessibility precondition after the grant refresh; the
+gate exited 65 and is not treated as success. **Release is held** pending that
+separate desktop check. This does not block the correction-return contract above.
+The direct live REST check already passed; cleanup requests in this recheck used
+fake HTTP.
+Result: `build/ChattyUI-20261108-063852-1313.xcresult`.
+Log: `build/verification-all-20261108.log`.
 
 Previous successful full gate: **2026-11-07**, `./scripts/check.sh --no-build`
 (before scoped defaults); 60 Swift test
