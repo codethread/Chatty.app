@@ -116,6 +116,20 @@ cleanup; device shutdown/recovery and the virtual-input lane remain gaps.
 
 ## Evidence and maintenance
 
+0.5.0 release gate: **2026-11-08**, `./scripts/check.sh --all --no-build`
+passed shell/selector checks, `swift build`, all 68 Swift tests in 14 suites and
+production archive validation. Nine of ten native workflows passed with zero
+skips, including the updated cleanup settings workflow, both recognizers and
+cross-app shortcuts. External paste failed the exact UI-test app's Accessibility
+precondition, the same previously accepted limitation recorded for 0.4.1 below.
+The gate exited 65 and remains incomplete; the landing request carries that
+known limitation forward, rather than treating it as a pass. The signed UI app
+and runner were reused unchanged from the scoped feature checks; the separate
+numbered production test build was stopped before shortcut testing. Six live
+model cases are recorded below. Result:
+`build/ChattyUI-20261108-070922-28832.xcresult`;
+log: `build/landing-check.log`.
+
 Configurable spoken editing: **2026-11-08**, `./scripts/check.sh --filter
 'CorrectionSettingsTests|PersistenceTests|OpenAITranscriptCorrectorTests|FakeOpenAIIntegrationTests'
 --only testCleanupSettingsValidationCancelResetAndPayload` passed shell/selector

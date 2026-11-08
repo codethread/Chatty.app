@@ -1,6 +1,6 @@
 cask "chatty" do
-  version "0.4.1"
-  sha256 "088022c614c0dd48fa44b6663d9b899f20c59289cdd5e68910d8d0514a25f5f5"
+  version "0.5.0"
+  sha256 "90e040f959674aa336cb0653610d27b349179a9a0051a6aabb89e158976d20f9"
 
   url "https://github.com/codethread/Chatty.app/releases/download/v#{version}/Chatty-#{version}-arm64.zip"
   name "Chatty"
