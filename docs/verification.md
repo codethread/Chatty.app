@@ -150,8 +150,9 @@ checks, `swift build`, all 66 Swift tests in 14 suites, and signed production
 archive validation passed. The unchanged signed test app was reused and the
 runner rebuilt. Nine of ten native workflows passed, with zero skips. External
 paste still failed its Accessibility precondition after the grant refresh; the
-gate exited 65 and is not treated as success. **Release is held** pending that
-separate desktop check. This does not block the correction-return contract above.
+gate exited 65 and is not treated as success. After receiving these results, the
+user requested landing the verified correction change with this reported desktop
+limitation. This does not block the correction-return contract above.
 The direct live REST check already passed; cleanup requests in this recheck used
 fake HTTP.
 Result: `build/ChattyUI-20261108-063852-1313.xcresult`.
@@ -171,3 +172,7 @@ with real files/loopback HTTP where applicable.
 Keep checked items tied to named tests or dated records. When a flow changes,
 update its coverage, actual I/O boundaries and remaining gaps. Execution procedures
 belong in the [agent testing guide](testing.md).
+
+Local `build/` records and result bundles are temporary evidence. The landing
+cleanup removes those raw artifacts after preserving these summaries and release
+notes; historical paths above identify the original runs, not retained files.

@@ -36,6 +36,10 @@ Read the [C4 architecture](docs/architecture.md) before changing component respo
 
 Before selected desktop, microphone or live-service checks, read [permissions and test prerequisites](docs/permissions.md) for the exact app's access and grant-recovery procedure.
 
+## Landing
+
+When asked to land, release, or merge and update Homebrew, follow [the release procedure](docs/releasing.md) through the installed production app and test/debug cleanup.
+
 ## Notes
 
 - Prefer fail-loud behavior over silent fallbacks.
