@@ -7,9 +7,11 @@ import Testing
 @MainActor
 @Suite(.timeLimit(.minutes(1)))
 struct FakeOpenAIIntegrationTests {
-    @Test func postsTheRealPayloadAndParsesScreamingSnakeOverHTTP() async throws {
+    @Test(arguments: [true, false])
+    func postsTheRealPayloadAndParsesScreamingSnakeOverHTTP(tapeEnabled: Bool) async throws {
         try await withFake { fake, url in
-            let settings = CorrectionSettings(prompt: "Preserve my tone.", dictionary: ["jason": "JSON"], contextLines: 5)
+            let settings = CorrectionSettings(prompt: "Preserve my tone.", dictionary: ["jason": "JSON"], contextLines: 5,
+                                              tapeEnabled: tapeEnabled, tapePrompt: "Follow my custom editing requests.")
             let corrector = OpenAITranscriptCorrector(credentials: OpenAICredentials(apiKey: FakeOpenAI.apiKey),
                                                      endpoint: url.appendingPathComponent("v1/responses"))
             let result = try await corrector.correct("Hello, café! Use JSON 🚀", settings: settings)
@@ -17,6 +19,7 @@ struct FakeOpenAIIntegrationTests {
             let receipt = try #require(await fake.receipts.first)
             #expect(receipt.input == "Hello, café! Use JSON 🚀")
             #expect(receipt.instructions == settings.instructions)
+            #expect(receipt.instructions?.contains(settings.tapePrompt) == tapeEnabled)
             #expect(receipt.model == OpenAITranscriptCorrector.model)
             #expect(receipt.payload?.contains(FakeOpenAI.apiKey) == false)
         }

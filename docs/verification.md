@@ -21,7 +21,7 @@ its framework/folder name alone does not identify the boundary tested.
 | Native streaming/Stop, Cancel/restart and preparation cancellation | Queue/context/revision handling, stale replies and session ownership: `DictationControllerTests`, `TranscriptCorrectionsTests`, `TranscriptLayoutTests`. |
 | One incomplete HTTP response and one Stop failure shown in the running app | All eight HTTP/response failures and all four input-failure stages, including retained audio and completion suppression: `DictationControllerTests`. These are component tests with real loopback HTTP/files and substituted capture/presentation. |
 | Native saved-recording Transcribe/Retry, Cancel and Copy | Multipart bytes/vocabulary, persisted errors, retry and background ownership: `FakeOpenAIIntegrationTests`, `RecordingTranscriptionControllerTests`. |
-| Settings validation, Save/Cancel/Reset and relaunch | Invalid dictionary/context variants and instruction encoding: `CorrectionSettingsTests`; file persistence/retention/corruption: `PersistenceTests`. |
+| Settings validation, Save/Cancel/Reset and relaunch | Dictionary/context validation, editable/enabled tape instructions and request encoding: `CorrectionSettingsTests`; file persistence/retention/corruption: `PersistenceTests`. |
 | Cross-app shortcut/Escape and production paste with clipboard restoration | Timing/modifier/key variants: `ShortcutTests`. Keep desktop tests because constructed events cannot prove global delivery or focus. |
 
 **Automated microphone evidence is still incomplete:** file replay bypasses the
@@ -93,10 +93,10 @@ cleanup; device shutdown/recovery and the virtual-input lane remain gaps.
 - [ ] **Manual:** Open saved audio in the system player, confirm audible contents and verify the transcription-vocabulary editor.
 - [ ] **Manual / service IO:** Real saved-speech upload, transcript quality and saved-recording paste into another app. Fake uploads return a reference transcript.
 
-## Edit sentence cleanup and the dictionary
+## Edit sentence cleanup, spoken editing and the dictionary
 
-- [x] **Auto UI + HTTP/files:** Validation, Save/Cancel, Reset with Save/Cancel, relaunch persistence and posted instructions/dictionary. `testCleanupSettingsValidationCancelResetAndPayload`.
-- [x] **Unit:** Dictionary parsing/capitalization, invalid entries, context counts and instruction serialization. [CorrectionSettingsTests](../Tests/ChattyTests/CorrectionSettingsTests.swift).
+- [x] **Auto UI + HTTP/files:** Validation, Save/Cancel, Reset with Save/Cancel, relaunch persistence and posted instructions/dictionary. Includes editable tape instructions, their enable switch, retained text while disabled and the posted disabled-state policy. `testCleanupSettingsValidationCancelResetAndPayload`.
+- [x] **Unit:** Dictionary parsing/capitalization, invalid entries, context counts, tape defaults, custom/disabled instructions, blank enabled-instruction rejection and instruction serialization. [CorrectionSettingsTests](../Tests/ChattyTests/CorrectionSettingsTests.swift).
 - [ ] **Manual / service IO:** Real cleanup preserves tone/context and applies preferred spellings on representative speech.
 - [x] **Agent-operated live service + app IO:** Through the debug app's existing Pi backend with `gpt-5.4-mini`, deleted three corrected sentences, continued without restoring them, then replaced two earlier sentences while preserving the third. Stop saved the expected transcript and delivered it to the private paste target, 2026-11-07. Local records: `build/correction-live-pi-{first,cleared,continued,final,ui}.json`. This verifies actual model edits and JSON decoding; it substitutes recognition and uses Pi's transport.
 - [x] **Agent-operated live REST + Keychain/app IO:** After user approval of Keychain access, the unchanged packaged debug app used the production OpenAI client to correct three sentences, delete the full passage with an explicit empty edit, continue without resurrection, and replace the first two fresh sentences while preserving the last. HTTP 200 responses and the saved transcript/private paste target were verified, 2026-11-08. Recognition was injected; this does not prove external paste. Local records: `build/rest-20261108-{start,first,cleared,continued,final,ui}.json`.
@@ -115,6 +115,31 @@ cleanup; device shutdown/recovery and the virtual-input lane remain gaps.
 - [ ] **Automated UI gap:** Running-app storage error/recovery and startup retention. Store-level checks do not cover presentation and relaunch together.
 
 ## Evidence and maintenance
+
+Configurable spoken editing: **2026-11-08**, `./scripts/check.sh --filter
+'CorrectionSettingsTests|PersistenceTests|OpenAITranscriptCorrectorTests|FakeOpenAIIntegrationTests'
+--only testCleanupSettingsValidationCancelResetAndPayload` passed shell/selector
+checks, `swift build`, 22 Swift tests in four suites and one native workflow with
+zero failures/skips. The workflow exercised the real AppKit editors/checkbox,
+validation, Save/Cancel/Reset, relaunch and loopback HTTP payloads. Custom tape text
+survived disabling/relaunch and was absent from requests while disabled; an explicit
+disabled-state instruction retained spoken editing requests as dictated content.
+The Swift checks used temporary config files and real loopback HTTP, substituting
+credentials, recognition and model output.
+Result: `build/ChattyUI-20261108-070308-24599.xcresult`;
+logs: `build/check-logs/{build,tests,ui-tests}.log`.
+
+The rebuilt `build/Chatty UITest.app` also passed six deliberate live output cases
+through its existing Pi backend with `openai/gpt-5.4-mini`: whole-passage deletion,
+sentence merging, disabled tape requests retained verbatim, a custom editing cue,
+that custom cue disabled, and disabled tape requests with an existing spoken-editing
+rule in the general cleanup prompt. Saved transcripts were checked. Recognition
+and external paste were substituted; Pi supplied its own authenticated transport
+in place of production Keychain loading/REST. This verifies live model behavior
+through Pi, not a direct production REST request. Record:
+`build/tape-live-final-verification.json`. Audio/capture, shortcuts, external paste,
+saved-audio upload and release packaging were excluded because their boundaries
+did not change.
 
 Correction-return contract: **2026-11-08**, all 66 Swift tests in 14 suites passed.
 The production cleanup client used loopback HTTP with a fake returning an

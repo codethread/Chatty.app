@@ -87,6 +87,8 @@ public struct HarnessState: Decodable {
         public let prompt: String
         public let dictionary: [String: String]
         public let contextLines: Int
+        public let tapeEnabled: Bool
+        public let tapePrompt: String
     }
     public struct Model: Decodable { public let phase: String; public let message: String; public let progress: Double? }
     public struct History: Decodable { public let phase: String; public let error: String? }

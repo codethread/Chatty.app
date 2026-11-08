@@ -58,7 +58,8 @@ struct PersistenceTests {
     @Test func settingsPersistThroughTheRealConfigStoreAndRemainIsolated() throws {
         try inTemporaryDirectory { directory in
             let store = ConfigStore(directory: directory)
-            let settings = CorrectionSettings(prompt: "Keep my words.", dictionary: ["jason": "JSON"], contextLines: 7)
+            let settings = CorrectionSettings(prompt: "Keep my words.", dictionary: ["jason": "JSON"], contextLines: 7,
+                                              tapeEnabled: false, tapePrompt: "My custom editing requests.")
             _ = try store.setCorrectionSettings(settings)
             _ = try store.setTranscriptionPrompt("Swift and AppKit")
             let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.command, .control],

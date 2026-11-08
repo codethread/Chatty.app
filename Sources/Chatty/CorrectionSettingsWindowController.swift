@@ -3,6 +3,8 @@ import AppKit
 @MainActor
 final class CorrectionSettingsWindowController: NSWindowController {
     private let promptView = NSTextView()
+    private let tapeEnabledButton = NSButton(checkboxWithTitle: "Enable for the tape instructions", target: nil, action: nil)
+    private let tapePromptView = NSTextView()
     private let dictionaryView = NSTextView()
     private let contextLinesField = NSTextField(string: "3")
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
@@ -11,7 +13,7 @@ final class CorrectionSettingsWindowController: NSWindowController {
     init(onSave: @escaping (CorrectionSettings) throws -> Void) {
         self.onSave = onSave
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 640, height: 620),
+            contentRect: NSRect(x: 0, y: 0, width: 680, height: 800),
             styleMask: [.titled, .closable, .resizable, .utilityWindow],
             backing: .buffered,
             defer: false
@@ -21,7 +23,7 @@ final class CorrectionSettingsWindowController: NSWindowController {
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
         panel.setAccessibilitySubrole(.floatingWindow)
-        panel.contentMinSize = NSSize(width: 560, height: 580)
+        panel.contentMinSize = NSSize(width: 600, height: 740)
         super.init(window: panel)
 
         let title = NSTextField(labelWithString: "Sentence cleanup")
@@ -47,6 +49,14 @@ final class CorrectionSettingsWindowController: NSWindowController {
         help.textColor = .secondaryLabelColor
 
         let promptScroll = editor(promptView, name: "Cleanup instructions", monospaced: false)
+        tapeEnabledButton.target = self
+        tapeEnabledButton.action = #selector(tapeEnabledChanged)
+        let tapeHelp = NSTextField(wrappingLabelWithString:
+            "Customize spoken editing requests. Disable this section to keep those requests as dictated text. Only text within the supplied context can be edited."
+        )
+        tapeHelp.font = .systemFont(ofSize: 12)
+        tapeHelp.textColor = .secondaryLabelColor
+        let tapeScroll = editor(tapePromptView, name: "For the tape instructions", monospaced: false)
         let dictionaryScroll = editor(dictionaryView, name: "Word dictionary", monospaced: true)
         let reset = NSButton(title: "Reset to Defaults", target: self, action: #selector(resetClicked))
         let cancel = NSButton(title: "Cancel", target: self, action: #selector(cancelClicked))
@@ -62,7 +72,8 @@ final class CorrectionSettingsWindowController: NSWindowController {
         errorLabel.setAccessibilityLabel("Settings validation")
 
         let content = NSStackView(views: [
-            title, description, contextRow, contextHelp, promptLabel, promptScroll, dictionaryLabel,
+            title, description, contextRow, contextHelp, promptLabel, promptScroll,
+            label("For the tape"), tapeEnabledButton, tapeHelp, tapeScroll, dictionaryLabel,
             help, dictionaryScroll, errorLabel, buttons
         ])
         content.orientation = .vertical
@@ -75,11 +86,12 @@ final class CorrectionSettingsWindowController: NSWindowController {
             content.trailingAnchor.constraint(equalTo: panel.contentView!.trailingAnchor, constant: -20),
             content.topAnchor.constraint(equalTo: panel.contentView!.topAnchor, constant: 20),
             content.bottomAnchor.constraint(equalTo: panel.contentView!.bottomAnchor, constant: -20),
-            promptScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 110),
-            dictionaryScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 110),
+            promptScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 80),
+            tapeScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 110),
+            dictionaryScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 80),
             promptScroll.heightAnchor.constraint(equalTo: dictionaryScroll.heightAnchor)
         ])
-        for view in content.arrangedSubviews {
+        for view in content.arrangedSubviews where view !== tapeEnabledButton {
             view.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
         }
         panel.center()
@@ -89,6 +101,9 @@ final class CorrectionSettingsWindowController: NSWindowController {
 
     func show(settings: CorrectionSettings) {
         promptView.string = settings.prompt
+        tapeEnabledButton.state = settings.tapeEnabled ? .on : .off
+        tapePromptView.string = settings.tapePrompt
+        tapeEnabledChanged()
         dictionaryView.string = settings.dictionaryText
         contextLinesField.stringValue = String(settings.contextLines)
         errorLabel.stringValue = ""
@@ -122,7 +137,9 @@ final class CorrectionSettingsWindowController: NSWindowController {
     @objc private func saveClicked() {
         do {
             let settings = try CorrectionSettings.parse(prompt: promptView.string, dictionaryText: dictionaryView.string,
-                                                        contextLinesText: contextLinesField.stringValue)
+                                                        contextLinesText: contextLinesField.stringValue,
+                                                        tapeEnabled: tapeEnabledButton.state == .on,
+                                                        tapePrompt: tapePromptView.string)
             try onSave(settings)
             close()
         } catch {
@@ -132,8 +149,16 @@ final class CorrectionSettingsWindowController: NSWindowController {
 
     @objc private func cancelClicked() { close() }
 
+    @objc private func tapeEnabledChanged() {
+        tapePromptView.isEditable = tapeEnabledButton.state == .on
+        tapePromptView.textColor = tapePromptView.isEditable ? .textColor : .secondaryLabelColor
+    }
+
     @objc private func resetClicked() {
         promptView.string = CorrectionSettings.defaultPrompt
+        tapeEnabledButton.state = .on
+        tapePromptView.string = CorrectionSettings.defaultTapePrompt
+        tapeEnabledChanged()
         dictionaryView.string = ""
         contextLinesField.stringValue = String(CorrectionSettings.default.contextLines)
         errorLabel.stringValue = ""

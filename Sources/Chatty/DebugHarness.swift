@@ -104,6 +104,8 @@ final class DebugHarness {
         var prompt: String?
         var dictionary: String?
         var contextLines: String?
+        var tapeEnabled: Bool?
+        var tapePrompt: String?
         var clearData: Bool?
         var enabled: Bool?
         var audioPath: String?
@@ -249,7 +251,9 @@ final class DebugHarness {
         case .settings:
             let settings = try CorrectionSettings.parse(prompt: command.prompt ?? CorrectionSettings.defaultPrompt,
                                                         dictionaryText: command.dictionary ?? "",
-                                                        contextLinesText: command.contextLines ?? "3")
+                                                        contextLinesText: command.contextLines ?? "3",
+                                                        tapeEnabled: command.tapeEnabled ?? true,
+                                                        tapePrompt: command.tapePrompt ?? CorrectionSettings.defaultTapePrompt)
             let config = try configStore.setCorrectionSettings(settings)
             corrections.settings = settings
             onSettings?(config)

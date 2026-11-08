@@ -4,7 +4,8 @@ import Testing
 
 struct OpenAITranscriptCorrectorTests {
     @Test func sendsTheWholePassageAndSettingsWithoutReasoningOrResponseStorage() throws {
-        let settings = CorrectionSettings(prompt: "Keep my tone.", dictionary: ["jason": "JSON"])
+        let settings = CorrectionSettings(prompt: "Keep my tone.", dictionary: ["jason": "JSON"],
+                                          tapePrompt: "Use my custom editing cue.")
         let request = try OpenAITranscriptCorrector.request("Use JSON. Um, send it to open ai.", settings: settings, apiKey: "test-key")
         let data = try #require(request.httpBody)
         let body = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
