@@ -20,7 +20,11 @@ its variants at the lowest layer that can detect the relevant regression. A
 past successful run is evidence, not a reason to retire that workflow test.
 When moving cases down, preserve their outcomes (saved audio, errors, copy/paste,
 session ownership), run the replacement tests, and keep the native check for
-control wiring and presentation. The full gate runs both layers.
+control wiring and presentation. `./scripts/check.sh` runs headless checks;
+add only affected UI/I/O slices, or `--all` for an explicit full gate across
+both layers and the release archive. Preview with `--list`. Unchanged paste or
+shortcut handling does not require those desktop tests for a cleanup change.
+See [permissions](permissions.md) before selecting a boundary that needs access.
 
 | Mechanism retained at the higher layer | Variants owned by faster tests |
 | --- | --- |
@@ -74,7 +78,7 @@ and keep format/text variants in the existing faster suites.
 ## Stop and insert the finished text
 
 - [x] **Auto UI:** Tail flush, cleanup completion, one copy/completion, playable AAC/transcript and history reload. `testStreamingQueueStopAndPersistence`.
-- [ ] **Auto UI / desktop IO:** Production activation/CGEvent Command-V, exact separate-editor text and restoration of every clipboard representation. `testExternalApplicationPasteAndClipboardRestoration` is blocked by the rebuilt app's Accessibility authorization on 2026-11-07, including a focused retry. Earlier successful evidence is in the previous full gate below.
+- [ ] **Auto UI / desktop IO:** Production activation/CGEvent Command-V, exact separate-editor text and restoration of every clipboard representation. `testExternalApplicationPasteAndClipboardRestoration` failed its Accessibility check on 2026-11-07 and a focused retry on 2026-11-08. The exact app's grant was subsequently refreshed; it has not been retested since that refresh. Earlier successful evidence is in the previous full gate below.
 - [x] **Unit + component IO:** Multi-sentence replacement/deletion, preserved older text, continued dictation after clearing, and Stop with no remaining text. [TranscriptCorrectionsTests](../Tests/ChattyTests/TranscriptCorrectionsTests.swift), [DictationControllerTests](../Tests/ChattyTests/DictationControllerTests.swift). The controller tests use loopback HTTP and playable AAC; capture/presentation are substituted.
 - [x] **Unit:** Context/pending speech/final-fragment handling preserves older corrected text. [TranscriptCorrectionsTests](../Tests/ChattyTests/TranscriptCorrectionsTests.swift), [TranscriptLayoutTests](../Tests/ChattyTests/TranscriptLayoutTests.swift).
 - [x] **Recorded desktop check:** File replay through each engine pasted expected text into TextEdit and restored the clipboard, 2026-11-07. Local record: `build/native-verification.json`.
@@ -113,7 +117,7 @@ and keep format/text variants in the existing faster suites.
 - [x] **Unit:** Dictionary parsing/capitalization, invalid entries, context counts and instruction serialization. [CorrectionSettingsTests](../Tests/ChattyTests/CorrectionSettingsTests.swift).
 - [ ] **Manual / service IO:** Real cleanup preserves tone/context and applies preferred spellings on representative speech.
 - [x] **Agent-operated live service + app IO:** Through the debug app's existing Pi backend with `gpt-5.4-mini`, deleted three corrected sentences, continued without restoring them, then replaced two earlier sentences while preserving the third. Stop saved the expected transcript and delivered it to the private paste target, 2026-11-07. Local records: `build/correction-live-pi-{first,cleared,continued,final,ui}.json`. This verifies actual model edits and JSON decoding; it substitutes recognition and uses Pi's transport.
-- [ ] **Live REST gap:** The production OpenAI client attempt stalled loading its Keychain key and was cancelled after 75 seconds, before sending a request. Local records: `build/correction-live-rest-{state,ui}.json`. The strict Responses API format is covered with loopback HTTP; the direct live REST check remains pending.
+- [x] **Agent-operated live REST + Keychain/app IO:** After user approval of Keychain access, the unchanged packaged debug app used the production OpenAI client to correct three sentences, delete the full passage with an explicit empty edit, continue without resurrection, and replace the first two fresh sentences while preserving the last. HTTP 200 responses and the saved transcript/private paste target were verified, 2026-11-08. Recognition was injected; this does not prove external paste. Local records: `build/rest-20261108-{start,first,cleared,continued,final,ui}.json`.
 
 ## Configure and use recording shortcuts
 
@@ -130,14 +134,25 @@ and keep format/text variants in the existing faster suites.
 
 ## Evidence and maintenance
 
+Scoped-runner verification: **2026-11-08**, default `./scripts/check.sh` passed
+shell syntax, selector checks, `swift build`, and all 66 Swift tests in 14 suites.
+`--filter 'TranscriptCorrectionsTests|DictationControllerTests'` ran exactly 22
+tests in two suites. Native `--only testCleanupSettingsValidationCancelResetAndPayload
+--no-build` ran exactly one workflow, with zero failures/skips. Result:
+`build/ChattyUI-20261108-061405-85059.xcresult`. Paste, shortcuts, recognizer and
+archive lanes were deliberately excluded for this runner/docs change, not counted
+as passes. Maintained selector checks exercise defaults, each group, unions,
+exact methods, catalogue completeness and invalid flags without desktop access.
+
 Current correction-fix gate: **2026-11-07**, `./scripts/check.sh`; 66 Swift test
 functions passed in 14 suites, archive validation passed, and 9 of 10 native
 workflows passed. External paste is blocked by Accessibility permission; its
 focused retry failed for the same permission check. No tests were skipped and
 the failed gate is not treated as success. **Release is held** pending that
-authorization and the direct live REST check above.
+authorization. The direct live REST check subsequently passed on 2026-11-08.
 Results: `build/ChattyUI-20261107-215617.xcresult`,
-`build/ChattyUI-correction-paste-recheck.xcresult`.
+`build/ChattyUI-correction-paste-recheck.xcresult`,
+`build/ChattyUI-authorized-paste-20261108.xcresult` (focused retry).
 
 Previous successful full gate: **2026-11-07**, `./scripts/check.sh --no-build`; 60 Swift test
 functions in 14 suites, 10 native UI workflows, zero failures/skips, and signed

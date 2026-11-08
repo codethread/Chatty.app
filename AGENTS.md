@@ -38,13 +38,11 @@ Read the [C4 architecture](docs/architecture.md) before changing component respo
 
 Read [the verification checklist](docs/verification.md) before changing user interactions, I/O boundaries, integrations or tests. **Update it in the same change** with affected coverage and remaining gaps. Each checked item must identify an executed automated test or recorded manual check; distinguish unit logic, real integration I/O and human verification. Keep new or changed checks unchecked until executed; record skipped coverage as a gap. Use the [testing runbook](docs/debug-verification.md) for execution procedures.
 
+Select tests from the changed behavior: start with focused Swift suites, then add only the affected UI/I/O slices. Unchanged paste or global-shortcut handling does not require those desktop tests. Preview with `./scripts/check.sh --list`; use `--all` for an explicitly required full regression/release gate. Report selected, excluded and blocked coverage separately.
+
 ## Permissions
 
-- Microphone: required for `AVAudioEngine` capture.
-- Accessibility: required for the global modifier-key monitor.
-- Avoid Input Monitoring unless reintroducing `CGEventTap`; listen-only event taps can trigger that broader permission.
-- Apps cannot programmatically grant TCC permissions. `tccutil` is a macOS developer/admin CLI for resetting permission state only.
-- Production startup requests Microphone/Accessibility. Sentence cleanup loads its key asynchronously on first use and caches it; macOS may request Keychain trust for a new build. Debug startup skips microphone and Accessibility prompts.
+Before desktop, microphone or live-service verification, read [permissions and test prerequisites](docs/permissions.md). It maps each test slice to the access it needs and explains blocked checks, app identities and reauthorization. Finish independent selected checks when a permission blocks one slice; ordinary test runs must preserve TCC decisions and authorized artifacts.
 
 ## Notes
 

@@ -10,90 +10,112 @@ The authenticated harness API supplies fixtures/faults and observes state and
 posted HTTP bytes. It also opens the shortcut-capture panel for the keyboard
 contract. It does not click controls on the UI suite's behalf.
 
-## Run the native suite
+## Select the changed slice
 
-On an unlocked macOS 26 Apple Silicon Mac with full Xcode selected:
+Start with the lowest layer that detects the regression. Preview the selection
+before building or requesting access:
 
 ```sh
+./scripts/check.sh --list
+./scripts/check.sh --filter 'TranscriptCorrectionsTests|DictationControllerTests'
 ./scripts/check.sh
 ```
 
-For a native-UI-only pass, use `./scripts/test-ui.sh`. The full gate above already
-runs it; there is no need to run both for the same change.
+The default runs shell/selector checks, `swift build`, and all Swift logic and
+component-I/O tests. It launches no desktop app and needs no privacy grants,
+live OpenAI key or model weights. Controller tests still exercise real loopback
+HTTP and temporary recordings; supplied-buffer tests still run AVFoundation.
 
-`test-ui.sh` builds and signs `build/Chatty UITest.app`, then runs
-`ChattyUITests.xcodeproj` with `xcodebuild test`. The main app stays a Swift
-package; the small Xcode project contains the UI testing bundle and an owned
-external paste destination. No project generator or scripting runtime is needed.
-Each test launches Chatty with a fresh directory in the UI runner's sandbox temp folder, then
-quits only its own app. Installed user builds and production storage stay separate.
+Add only the boundaries affected by the task:
 
-On first run, macOS asks to **Enable UI Automation** using password/Touch ID.
-Approve that system prompt. The test app also needs Accessibility permission for
-its production CGEvent paste path: add `build/Chatty UITest.app` in System Settings
-→ Privacy & Security → Accessibility. Neither script resets or edits TCC. A missing
-authorization, locked desktop or unavailable model causes failure, not a passed
-or silently skipped test. Run serially without other desktop automation: focus,
-keyboard and clipboard are shared system resources.
+| Change | Additional selection |
+| --- | --- |
+| AppKit controls/settings, overlay or app lifecycle wiring | `--with-ui`, or one relevant UI method with `--only` |
+| Paste dispatch, target activation/focus or general clipboard | `--with-paste` |
+| Global shortcut registration, capture or Escape handling | `--with-global-shortcuts` |
+| Real recognizer inference/selection or recognition data flow | `--with-audio` |
+| Production packaging, signing or debug exclusion | `--with-release` |
+| Explicit full regression/release gate | `--all` |
 
-Local builds use ad-hoc signing. A rebuilt app can invalidate its Accessibility
-grant because macOS identifies that signature by its code hash. Reauthorize the
-rebuilt app (remove and re-add its entry if the switch is on but access is still
-denied), then use `./scripts/test-ui.sh --no-build` to run the previously
-built app and UI bundle without replacing either. That mode intentionally does
-not compile code changes. For an unattended test Mac, provision a stable signing
-certificate and set `CHATTY_DEBUG_SIGN_IDENTITY` to its identity when packaging;
-the script fails if that identity is unavailable. No certificate is created and
-no code-signing requirement or TCC check is weakened by the tooling.
-`./scripts/check.sh --no-build` still runs the Swift/release checks, then reuses
-those UI artifacts. A normal run is required after changing the app. For
-UI-test-only changes, rebuild the runner separately before using `--no-build`;
-this compiles the changed tests while preserving the unchanged app's grant:
+For example, a cleanup change can run its focused Swift suites and one settings
+workflow without exercising external paste or global shortcuts:
+
+```sh
+./scripts/check.sh --filter 'CorrectionSettingsTests|OpenAITranscriptCorrectorTests|DictationControllerTests'
+./scripts/test-ui.sh --only testCleanupSettingsValidationCancelResetAndPayload
+./scripts/check.sh --with-paste --with-global-shortcuts --list
+./scripts/check.sh --all
+```
+
+Flags combine as a union, not a dependency chain: `--with-paste` adds the paste
+workflow alone, not all other UI workflows. `test-ui.sh` without a selection
+runs core AppKit workflows; with an explicit selection it runs only those
+groups/methods. `--only` is repeatable and accepts a method name or full XCTest
+identifier. `--all` runs the native target unfiltered and rejects narrowing with
+`--only` or a Swift `--filter`. CLI `--help`/`--list` are the selector inventory.
+
+Keep tests organized around behavior. The small native group catalogue lives in
+`test-ui.sh`; update it when adding a workflow. The selector checks reject
+unclassified workflows. Native `--all` supplies no `-only-testing` filter, keeping
+the entire target in the full gate.
+Selected permission/model failures fail the run. Excluded groups are unexecuted
+coverage, not passes. An unchanged, unselected shortcut lane does not block
+verification of cleanup; an explicitly required release check remains required.
+
+### Framework filters and annotations
+
+SwiftPM supports `swift test --filter REGEX`, `--skip REGEX`, and `swift test list`.
+For a single focused run, invoke it directly with `-Xswiftc -DCHATTY_DEBUG_PANEL`.
+Swift Testing also supports `@Tag` and `.tags(...)` across suites/files; tags can
+be selected in Xcode test plans. The current fast suites are selectable by name,
+so no extra tag hierarchy or folder reshuffle is needed.
+[Apple tags documentation](https://developer.apple.com/documentation/Testing/AddingTags).
+
+The native suite uses XCTest/XCUIAutomation, not Swift Testing. Its wrapper uses
+Xcode's `-only-testing:target/suite/method`; `-skip-testing` and saved test plans
+are available for lower-level/custom invocation. A Swift Testing tag does not
+annotate an XCTest UI method.
+[Apple test plans](https://developer.apple.com/documentation/xcode/organizing-tests-to-improve-feedback).
+
+## Native execution and authorized artifacts
+
+Read [permissions and prerequisites](permissions.md) before selecting desktop,
+capture or live-service tests. Native checks require an unlocked macOS 26 Apple
+Silicon desktop and full Xcode. Run them serially without other desktop
+automation: focus, keyboard and clipboard are shared resources.
+
+`test-ui.sh` builds/signs `build/Chatty UITest.app` and uses the Xcode UI runner
+and owned paste-target app. Each workflow uses fresh isolated storage, quits only
+its own app, and leaves production data alone. Core workflows use empty isolated
+model caches. The explicit audio workflow uses the cached fixed Nemotron model;
+provision Apple speech assets too, since missing assets may trigger Apple's
+initial download. File replay does not cross the microphone-input boundary.
+
+To retry unchanged authorized artifacts, add `--no-build`:
+
+```sh
+./scripts/test-ui.sh --with-paste --no-build
+./scripts/check.sh --all --no-build
+```
+
+This preserves both signed app and runner and does not compile their changes.
+`check.sh` still builds/runs Swift checks and any selected archive check. App
+source changes require rebuilding the app before accepting UI evidence. For
+UI-test-only edits, rebuild the runner separately to preserve the app's grant:
 
 ```sh
 qlock exec --lock /tmp/agent-cpu.lock -w 60 -- xcodebuild build-for-testing \
   -project ChattyUITests.xcodeproj -scheme ChattyUITests \
   -destination 'platform=macOS,arch=arm64' -derivedDataPath build/UITests
-./scripts/check.sh --no-build
+./scripts/test-ui.sh --only testCleanupSettingsValidationCancelResetAndPayload --no-build
 ```
 
-The default audio contract requires the already downloaded fixed Nemotron model
-in Chatty's shared cache. Use the debug panel's Speech Recognition settings to
-download it first (approximately 626 MB). The ordinary suite never initiates a
-network download. `--skip-audio` explicitly excludes the named audio contract;
-all remaining tests use an empty isolated model cache.
-
-`check.sh` additionally runs locked Swift build/logic checks and packages a signed
-production ZIP. Native Foundation code checks the extracted archive's identity,
-menu-bar flag and absence of the debug harness. Expensive commands use
-`qlock` on `/tmp/agent-cpu.lock`. Logs live in `build/check-logs/`; timestamped
-`build/ChattyUI-*.xcresult` bundles contain results, final state attachments and
-Xcode failure screenshots. Open a result with `open build/ChattyUI-….xcresult`.
-Test workspaces remain available for inspecting config, metadata and AAC files;
-their absolute paths are recorded in the attached final state.
-They contain only the synthetic fixtures unless explicitly changed by a developer.
-
-## Use focused tests during development
-
-Run the smallest suite owning the changed behavior first. For example:
-
-```sh
-swift test -Xswiftc -DCHATTY_DEBUG_PANEL --filter DictationControllerTests
-swift test -Xswiftc -DCHATTY_DEBUG_PANEL --filter MicrophoneCaptureTests
-swift test -Xswiftc -DCHATTY_DEBUG_PANEL --filter CorrectionSettingsTests
-```
-
-The controller suite uses real loopback HTTP and temporary recording files with
-scripted input and a presentation probe. It covers the HTTP/input failure
-matrices without launching a desktop app. The capture suite runs AVFoundation
-processing on supplied buffers; it does not acquire an input device. Pure
-transcript/settings tests need neither recognizers nor models.
-
-Focused tests need no CPU lock. Run full suites through `qlock` on
-`/tmp/agent-cpu.lock`; `check.sh` and `test-ui.sh` already lock their expensive
-commands. Use the complete gate for the finished change, including the native
-audio and desktop contracts. A green focused run does not close hardware,
-permissions or live-service gaps, and `--skip-audio` must remain explicit.
+Focused Swift tests need no CPU lock. Full suites/builds use `qlock` on
+`/tmp/agent-cpu.lock`; the wrappers already lock expensive commands. Logs live in
+`build/check-logs/`; `build/ChattyUI-*.xcresult` bundles include results, final
+state and failure screenshots. Test workspace paths in the attached state let
+you inspect retained synthetic AAC/config/metadata. Record the selected slices
+and result when updating the coverage map, including any blocked boundary.
 
 ## Coverage
 

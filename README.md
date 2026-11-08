@@ -29,6 +29,9 @@ brew upgrade --cask codethread/chatty/chatty
 2. Open the 🎙️ menu and choose **Set OpenAI API Key…**. The key is saved in Keychain.
 3. Focus the app where you want to insert text.
 
+See [permissions](docs/permissions.md) for why each grant is needed, which app
+needs it, and how permissions differ for development and testing.
+
 Chatty stays in the menu bar rather than the Dock. Apple speech recognition is
 the default; macOS downloads its speech assets on first use if needed. Both
 recognition options run locally, but sentence cleanup requires the OpenAI API.
@@ -108,4 +111,5 @@ how to collect audio setup logs.
 - [Repeatable recording-quality check](docs/dictation-test.md)
 - [Building from source and development tools](docs/development.md)
 - [Verification checklist](docs/verification.md)
+- [Permissions and test prerequisites](docs/permissions.md)
 - [Architecture](docs/architecture.md)
