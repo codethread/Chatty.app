@@ -66,6 +66,8 @@ identity and no debug harness. Check its signature, compare its executable with
 the verified archive, and check the `chatty` launcher resolves to that installed
 binary. Confirm the installed app process launches. Preserve existing privacy
 decisions; macOS may still request trust after an ad-hoc signed update.
+Startup also runs the documented five-day recording retention. Distinguish that
+normal pruning from explicit debug cleanup when checking data preservation.
 
 ## Remove test/debug artifacts
 
@@ -80,6 +82,8 @@ and numbered `/Applications/Chatty <N>.app` test installs after confirming their
 affected checkout to remove compiled products while retaining dependency caches.
 Remove test-runner synthetic workspaces only from its identified container/temp
 location. Apply Homebrew cleanup to obsolete cask versions.
+Remove preferences, caches and HTTP storage only for the identified test/debug
+bundle IDs; keep the production `local.chatty.Chatty` domains.
 
 Keep the source worktrees and `/Applications/Chatty.app`. Preserve
 `~/Library/Application Support/Chatty/` (production recordings/config and the

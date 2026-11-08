@@ -34,6 +34,7 @@ cleanup; device shutdown/recovery and the virtual-input lane remain gaps.
 - [x] **Auto IO:** Production ZIP signing, menu-bar identity and debug exclusion. [Archive check](../scripts/verify-release.swift).
 - [x] **Auto UI:** Fresh debug storage, relaunch and isolation from production. `testStreamingQueueStopAndPersistence`, `testCleanupSettingsValidationCancelResetAndPayload`.
 - [x] **Agent-operated IO:** Homebrew upgraded 0.3.0 → 0.4.0 from the published release, 2026-11-07. Verified the archive checksum/signature, installed version/menu-bar identity, exact installed binary and `chatty` symlink target; opened `/Applications/Chatty.app` and confirmed its process running. Local record: `build/homebrew-0.4.0-verification.json`.
+- [x] **Agent-operated release/install IO:** Landed [0.4.1](https://github.com/codethread/Chatty.app/releases/tag/v0.4.1) and upgraded Homebrew 0.4.0 → 0.4.1, 2026-11-08. Published archive SHA256 `088022c614c0dd48fa44b6663d9b899f20c59289cdd5e68910d8d0514a25f5f5`; installed executable matched the verified archive, signature/menu-bar/debug-exclusion checks passed, launcher resolved to that executable, and the production app launched. The reported external-paste test limitation remains open.
 - [ ] **Manual:** Fresh Homebrew install, installed menu interaction and invoking the `chatty` launcher from Terminal. The agent-operated upgrade check above does not exercise those interactions.
 - [ ] **Manual:** Production Microphone/Accessibility allow/deny, visible failures and recovery after permission changes.
 - [ ] **Manual:** API-key menu, real Keychain save/trust, replacement and relaunch. The debug suite supplies a fake key.
@@ -176,3 +177,12 @@ belong in the [agent testing guide](testing.md).
 Local `build/` records and result bundles are temporary evidence. The landing
 cleanup removes those raw artifacts after preserving these summaries and release
 notes; historical paths above identify the original runs, not retained files.
+
+Landing cleanup: **2026-11-08**, removed seven numbered test installs, both Chatty
+worktrees' `build/` output, compiled Swift products, 83 synthetic UI-test workspaces,
+four scratch files and 12 test-only preference/cache/HTTP-storage entries. Source
+worktrees and dependency caches remain. Cleanup left all 44 post-launch production
+files unchanged and preserved the installed binary, production preferences/cache,
+Keychain/TCC and shared model weights. Before explicit cleanup, normal startup
+retention had removed one expired recording and updated its index; the other
+43 production files were unchanged across the upgrade.
