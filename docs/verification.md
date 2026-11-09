@@ -117,6 +117,16 @@ cleanup; device shutdown/recovery and the virtual-input lane remain gaps.
 
 ## Evidence and maintenance
 
+0.5.1 release gate: **2026-11-09**, `./scripts/check.sh --all --no-build`
+passed shell and selector checks, the Swift build, all 68 Swift tests in 14
+suites, and signed archive validation. Nine of ten native workflows passed,
+including Apple and Nemotron file replay, saved-recording retry and the cross-app
+shortcut. External paste stopped at the signed UI-test app's Accessibility
+precondition. The gate exited 65 and remains incomplete. The user confirmed the
+numbered production build worked in an end-to-end check and then requested
+landing with that automated permission limitation still open.
+Result: `build/ChattyUI-20261109-061818-64576.xcresult`.
+
 macOS 27.2 audio fix: **2026-11-09**, Xcode 27.2 / Swift 6.4.2.
 `./scripts/check.sh --all` passed shell and selector checks, the Swift build,
 all 68 Swift tests in 14 suites, and signed archive validation. Eight native
