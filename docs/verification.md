@@ -135,6 +135,12 @@ matched the archive, the `chatty` launcher resolved to it, and the app launched.
 All six production-store files and 22 shared model files matched the pre-install
 snapshot.
 
+0.5.1 landing cleanup: **2026-11-09**, removed `Chatty 1.app`, checkout build
+outputs, 22 synthetic UI test workspaces and three test-only Library entries.
+`swift package clean` removed compiled products, and Homebrew cleanup ran for
+Chatty. The production app remained running and its executable, store, cache and
+shared model files matched the pre-cleanup checks.
+
 macOS 27.2 audio fix: **2026-11-09**, Xcode 27.2 / Swift 6.4.2.
 `./scripts/check.sh --all` passed shell and selector checks, the Swift build,
 all 68 Swift tests in 14 suites, and signed archive validation. Eight native
