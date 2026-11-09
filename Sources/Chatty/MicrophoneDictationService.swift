@@ -2,8 +2,7 @@ import AVFoundation
 import CoreMedia
 import Foundation
 import OSLog
-import Speech
-import Synchronization
+import os
 
 @MainActor
 final class MicrophoneDictationService: DictationInputService {
@@ -170,14 +169,14 @@ final class MicrophoneDictationService: DictationInputService {
     }
 
     static func makeCaptureCallback(
-        into captured: AsyncStream<AnalyzerInput>.Continuation,
+        into captured: AsyncStream<OwnedPCMBuffer>.Continuation,
         onError: @escaping @Sendable (Error) -> Void
     ) -> @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void {
         // AVAudioNodeTapBlock lacks a Sendable annotation in the SDK. The
         // callback runs on AVAudioEngine's queue, never on this class's actor.
         { @Sendable buffer, _ in
             do {
-                captured.yield(AnalyzerInput(buffer: try Self.copy(buffer)))
+                captured.yield(OwnedPCMBuffer(buffer: try Self.copy(buffer)))
             } catch {
                 onError(error)
             }
@@ -203,8 +202,8 @@ final class MicrophoneDictationService: DictationInputService {
         let recordingURL: URL
         let engine = AVAudioEngine()
         let events = AsyncThrowingStream<DictationEvent, Error>.makeStream()
-        let captured = AsyncStream<AnalyzerInput>.makeStream()
-        let analysis = AsyncStream<AnalyzerInput>.makeStream()
+        let captured = AsyncStream<OwnedPCMBuffer>.makeStream()
+        let analysis = AsyncStream<OwnedPCMBuffer>.makeStream()
         let recognition: SpeechRecognitionSession
         var configurationObserver: NSObjectProtocol?
         var processingTask: Task<Void, Error>?
@@ -249,6 +248,11 @@ struct RecognitionTranscript {
     }
 }
 
+/// Producers yield their own buffers after writing, and consumers only read the samples.
+struct OwnedPCMBuffer: @unchecked Sendable {
+    let buffer: AVAudioPCMBuffer
+}
+
 actor MicrophoneBufferProcessor {
     private var file: AVAudioFile?
     private let recordingURL: URL
@@ -273,8 +277,8 @@ actor MicrophoneBufferProcessor {
     }
 
     func run(
-        input: AsyncStream<AnalyzerInput>,
-        analysis: AsyncStream<AnalyzerInput>.Continuation,
+        input: AsyncStream<OwnedPCMBuffer>,
+        analysis: AsyncStream<OwnedPCMBuffer>.Continuation,
         events: AsyncThrowingStream<DictationEvent, Error>.Continuation
     ) async throws {
         defer {
@@ -285,10 +289,10 @@ actor MicrophoneBufferProcessor {
         for await input in input {
             try Task.checkCancellation()
             let buffer = input.buffer
-            let recording = try convert(buffer, with: recordingConverter, to: recordingFormat)
+            let recording = try convert(input, with: recordingConverter, to: recordingFormat)
             try file!.write(from: recording)
-            let converted = try convert(buffer, with: analysisConverter, to: analysisFormat)
-            if converted.frameLength > 0 { analysis.yield(AnalyzerInput(buffer: converted)) }
+            let converted = try convert(input, with: analysisConverter, to: analysisFormat)
+            if converted.frameLength > 0 { analysis.yield(OwnedPCMBuffer(buffer: converted)) }
             framesSinceMeter += Int(buffer.frameLength)
             if framesSinceMeter >= Int(buffer.format.sampleRate / 10) {
                 framesSinceMeter = 0
@@ -298,7 +302,7 @@ actor MicrophoneBufferProcessor {
             }
         }
         try flush(recordingConverter, format: recordingFormat) { try file!.write(from: $0) }
-        try flush(analysisConverter, format: analysisFormat) { analysis.yield(AnalyzerInput(buffer: $0)) }
+        try flush(analysisConverter, format: analysisFormat) { analysis.yield(OwnedPCMBuffer(buffer: $0)) }
     }
 
     private static func converter(from input: AVAudioFormat, to output: AVAudioFormat) throws -> AVAudioConverter? {
@@ -308,14 +312,14 @@ actor MicrophoneBufferProcessor {
         return converter
     }
 
-    private func convert(_ input: AVAudioPCMBuffer, with converter: AVAudioConverter?, to format: AVAudioFormat) throws -> AVAudioPCMBuffer {
+    private func convert(_ packet: OwnedPCMBuffer, with converter: AVAudioConverter?, to format: AVAudioFormat) throws -> AVAudioPCMBuffer {
+        let input = packet.buffer
         guard let converter else { return input }
         let capacity = AVAudioFrameCount(ceil(Double(input.frameLength) * format.sampleRate / input.format.sampleRate)) + 32
         guard let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else {
             throw MicrophoneError.cannotAllocateBuffer
         }
-        let ownedInput = AnalyzerInput(buffer: input)
-        let supplied = Mutex(false)
+        let supplied = OSAllocatedUnfairLock(initialState: false)
         var error: NSError?
         let status = converter.convert(to: output, error: &error) { _, inputStatus in
             let wasSupplied = supplied.withLock { supplied in
@@ -328,7 +332,7 @@ actor MicrophoneBufferProcessor {
                 return nil
             }
             inputStatus.pointee = .haveData
-            return ownedInput.buffer
+            return packet.buffer
         }
         if let error { throw error }
         if status == .error { throw MicrophoneError.audioConversionFailed }

@@ -58,7 +58,7 @@ enum DebugASRBenchmark {
             throw BenchmarkError.appleAudioFormat
         }
         let duration = Double(file.length) / file.processingFormat.sampleRate
-        let captured = AsyncStream<AnalyzerInput>.makeStream()
+        let captured = AsyncStream<OwnedPCMBuffer>.makeStream()
         let events = AsyncThrowingStream<DictationEvent, Error>.makeStream()
         let start = ContinuousClock.now
         let feeder = Task.detached {
@@ -112,7 +112,7 @@ enum DebugASRBenchmark {
     }
 
     private static func runApple(
-        input: AsyncStream<AnalyzerInput>, format: AVAudioFormat,
+        input: AsyncStream<OwnedPCMBuffer>, format: AVAudioFormat,
         events: AsyncThrowingStream<DictationEvent, Error>.Continuation
     ) async throws {
         guard let locale = await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: "en-GB")) else {
@@ -132,7 +132,7 @@ enum DebugASRBenchmark {
             }
         }
         do {
-            try await analyzer.start(inputSequence: input)
+            try await analyzer.start(inputSequence: input.map { AnalyzerInput(buffer: $0.buffer) })
             try await analyzer.finalizeAndFinishThroughEndOfInput()
             try await results.value
         } catch {

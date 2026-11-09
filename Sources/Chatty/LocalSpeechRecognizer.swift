@@ -2,7 +2,6 @@ import AVFoundation
 import CoreML
 import FluidAudio
 import Foundation
-import Speech
 
 /// A warm, cache-aware 600M model. Each session resets decoder state, not weights.
 actor LocalSpeechRecognizer {
@@ -92,7 +91,7 @@ actor LocalSpeechRecognizer {
     }
 
     func run(
-        input: AsyncStream<AnalyzerInput>,
+        input: AsyncStream<OwnedPCMBuffer>,
         events: AsyncThrowingStream<DictationEvent, Error>.Continuation,
         onDiagnostic: @Sendable (String) async -> Void = { _ in }
     ) async throws {

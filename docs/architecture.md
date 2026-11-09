@@ -1,6 +1,6 @@
 # Chatty architecture
 
-Chatty is a Swift/AppKit menu-bar app for macOS 26 on Apple Silicon. Speech
+Chatty is a Swift/AppKit menu-bar app for macOS 26 or later on Apple Silicon. Speech
 recognition runs locally: Apple by default, or an optional Nemotron model.
 OpenAI handles sentence cleanup and explicitly requested saved-audio transcription.
 
@@ -90,8 +90,8 @@ flowchart TD
 
 ## Cross-component contracts
 
-- Engine selection is persisted and captured at session start. Microphone and
-  file replay share recognition and audio processing.
+- Engine selection is persisted and captured at session start. The shared audio
+  processor converts microphone and file replay audio for the selected recognizer.
 - Cleanup replaces the whole submitted passage: recent corrected lines plus all
   pending speech. New speech does not consume that lookback. Both cleanup clients
   decode a JSON `text` field; an explicit empty string is a successful deletion.

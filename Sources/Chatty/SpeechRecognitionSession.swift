@@ -17,7 +17,7 @@ final class SpeechRecognitionSession {
         self.engine = engine; self.local = local; self.locale = locale
     }
 
-    func start(inputFormat: AVAudioFormat, input: AsyncStream<AnalyzerInput>,
+    func start(inputFormat: AVAudioFormat, input: AsyncStream<OwnedPCMBuffer>,
                events: AsyncThrowingStream<DictationEvent, Error>.Continuation,
                onDiagnostic: @escaping @Sendable (String) async -> Void = { _ in },
                onFailure: @escaping @MainActor (Error) -> Void) async throws -> AVAudioFormat {
@@ -59,7 +59,8 @@ final class SpeechRecognitionSession {
                     }
                 } catch { onFailure(error); throw error }
             }
-            try await analyzer.start(inputSequence: input)
+            // AnalyzerInput requires Int16 on macOS 27. Wrap the converted buffers here.
+            try await analyzer.start(inputSequence: input.map { AnalyzerInput(buffer: $0.buffer) })
             try checkCancellation()
             return format
         }

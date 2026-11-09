@@ -1,7 +1,6 @@
 import AVFoundation
 import Darwin
 import Foundation
-import Speech
 import Testing
 @testable import Chatty
 
@@ -15,8 +14,8 @@ struct MicrophoneCaptureTests {
         let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
         let analysisFormat = AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1)!
         let processor = try MicrophoneBufferProcessor(recordingURL: recordingURL, inputFormat: format, analysisFormat: analysisFormat)
-        let captured = AsyncStream<AnalyzerInput>.makeStream()
-        let analysis = AsyncStream<AnalyzerInput>.makeStream()
+        let captured = AsyncStream<OwnedPCMBuffer>.makeStream()
+        let analysis = AsyncStream<OwnedPCMBuffer>.makeStream()
         let events = AsyncThrowingStream<DictationEvent, Error>.makeStream()
         for packet in 0..<10 {
             let count = Int(sampleRate / 10)
@@ -26,7 +25,7 @@ struct MicrophoneCaptureTests {
                 buffer.floatChannelData![0][frame] = 0
                 buffer.floatChannelData![1][frame] = 0.1 * sin(Float(packet * count + frame) * 2 * .pi * 240 / Float(sampleRate))
             }
-            captured.continuation.yield(AnalyzerInput(buffer: buffer))
+            captured.continuation.yield(OwnedPCMBuffer(buffer: buffer))
         }
         captured.continuation.finish()
         try await processor.run(input: captured.stream, analysis: analysis.continuation, events: events.continuation)
@@ -58,7 +57,7 @@ struct MicrophoneCaptureTests {
     @MainActor
     @Test(arguments: [AVAudioChannelCount(1), AVAudioChannelCount(2)])
     func captureCreatedOnMainActorRunsOffMainAndOwnsItsSamples(channels: AVAudioChannelCount) async throws {
-        let captured = AsyncStream<AnalyzerInput>.makeStream()
+        let captured = AsyncStream<OwnedPCMBuffer>.makeStream()
         let callback = MicrophoneDictationService.makeCaptureCallback(into: captured.continuation) { error in
             Issue.record(error)
         }

@@ -1,11 +1,10 @@
 #if CHATTY_DEBUG_PANEL
 import AVFoundation
 import Foundation
-import Speech
 
 enum DebugAudioReplay {
     static func feed(
-        _ url: URL, into captured: AsyncStream<AnalyzerInput>.Continuation,
+        _ url: URL, into captured: AsyncStream<OwnedPCMBuffer>.Continuation,
         realtime: Bool, start: ContinuousClock.Instant,
         commonFormat: AVAudioCommonFormat = .pcmFormatFloat32
     ) async throws {
@@ -19,7 +18,7 @@ enum DebugAudioReplay {
             try file.read(into: buffer)
             supplied += Double(buffer.frameLength) / file.processingFormat.sampleRate
             if realtime { try await ContinuousClock().sleep(until: start + .seconds(supplied)) }
-            captured.yield(AnalyzerInput(buffer: buffer))
+            captured.yield(OwnedPCMBuffer(buffer: buffer))
         }
     }
 }
@@ -112,8 +111,8 @@ final class DebugAudioFileInputService: DictationInputService {
     }
 
     private final class Session {
-        let captured = AsyncStream<AnalyzerInput>.makeStream()
-        let analysis = AsyncStream<AnalyzerInput>.makeStream()
+        let captured = AsyncStream<OwnedPCMBuffer>.makeStream()
+        let analysis = AsyncStream<OwnedPCMBuffer>.makeStream()
         let events = AsyncThrowingStream<DictationEvent, Error>.makeStream()
         let recordingURL: URL
         let recognition: SpeechRecognitionSession
