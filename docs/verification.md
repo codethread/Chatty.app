@@ -117,6 +117,22 @@ cleanup; device shutdown/recovery and the virtual-input lane remain gaps.
 
 ## Evidence and maintenance
 
+macOS 27.2 audio fix: **2026-11-09**, Xcode 27.2 / Swift 6.4.2.
+`./scripts/check.sh --all` passed shell and selector checks, the Swift build,
+all 68 Swift tests in 14 suites, and signed archive validation. Eight native
+workflows passed, including Apple and Nemotron recognition from the WAV fixture.
+External paste stopped at the UI-test app's Accessibility check. Saved-recording
+retry exposed a debug snapshot that mixed old metadata with the new upload phase.
+After fixing that snapshot, 13 Swift tests across `MicrophoneCaptureTests`,
+`RecordingTranscriptionControllerTests`, `FakeOpenAIIntegrationTests`, and
+`PersistenceTests` passed. The native audio and saved-recording workflows also
+passed on the rebuilt app using real recognizers, AAC, and loopback HTTP with
+synthetic audio. These checks bypass the microphone tap and live OpenAI.
+Full result: `build/ChattyUI-20261109-055556-54277.xcresult`.
+Focused result: `build/ChattyUI-20261109-060039-56407.xcresult`.
+The user reported that numbered production build `Chatty 1.app` worked in
+their manual end-to-end check on macOS 27.2 before requesting landing.
+
 0.5.0 release gate: **2026-11-08**, `./scripts/check.sh --all --no-build`
 passed shell/selector checks, `swift build`, all 68 Swift tests in 14 suites and
 production archive validation. Nine of ten native workflows passed with zero

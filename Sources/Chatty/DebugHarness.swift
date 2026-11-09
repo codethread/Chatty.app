@@ -200,6 +200,9 @@ final class DebugHarness {
     }
 
     func snapshot() async -> Snapshot {
+        // Read other actors before taking the app and recording snapshot on the main actor.
+        let requestCount = await fake.receipts.count
+        let model = await recognizer.modelState()
         var recordings: [Recording] = []
         var storageError: String?
         do { recordings = try store.load() } catch { storageError = error.localizedDescription }
@@ -209,10 +212,10 @@ final class DebugHarness {
                         text: controller.correctionState.text, copied: copied, completed: completed,
                         pasteTarget: pasteTarget.text, overlay: overlay.debugSnapshot,
                         recordingCount: recordings.count, latestRecording: recordings.first, storageError: storageError,
-                        requestCount: await fake.receipts.count, settings: corrections.settings, directory: store.appDirectory,
+                        requestCount: requestCount, settings: corrections.settings, directory: store.appDirectory,
                         globalShortcuts: globalShortcuts,
                         history: Dictionary(uniqueKeysWithValues: history.states.map { ($0.key.uuidString, $0.value) }),
-                        platform: platformState?() ?? [:], speechEngine: input.configured.backend, model: await recognizer.modelState(),
+                        platform: platformState?() ?? [:], speechEngine: input.configured.backend, model: model,
                         recognitionEngine: input.source == .audioFile ? input.audioFile.recognitionEngine : input.configured.recognitionEngine,
                         systemPasteTarget: systemPaste.targetID, clipboardNeedsRestore: systemPaste.needsRestore,
                         clipboardRestored: systemPaste.restoredClipboard, systemPasteDispatches: systemPaste.dispatchCount)
