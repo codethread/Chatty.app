@@ -127,6 +127,14 @@ numbered production build worked in an end-to-end check and then requested
 landing with that automated permission limitation still open.
 Result: `build/ChattyUI-20261109-061818-64576.xcresult`.
 
+0.5.1 Homebrew install: **2026-11-09**, GitHub's asset digest matched the
+verified local archive and cask checksum. Homebrew's 0.4.0 receipt pointed to a
+missing app, so it was removed before installing 0.5.1. The installed bundle
+passed signature, menu-bar identity and debug exclusion checks. Its executable
+matched the archive, the `chatty` launcher resolved to it, and the app launched.
+All six production-store files and 22 shared model files matched the pre-install
+snapshot.
+
 macOS 27.2 audio fix: **2026-11-09**, Xcode 27.2 / Swift 6.4.2.
 `./scripts/check.sh --all` passed shell and selector checks, the Swift build,
 all 68 Swift tests in 14 suites, and signed archive validation. Eight native
